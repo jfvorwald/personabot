@@ -176,6 +176,19 @@ the first place.
 
 Revisit only if the bot ever acquires a job where persuasion is the point.
 
+## 13. Known bug: restart.sh startup wait can match a previous run
+
+`start()` waits for the bot to come up by grepping the last 40 lines of
+`live.log` for `Live mode:`. Since the log now appends across deploys instead
+of being truncated, that tail can contain the *previous* run's startup line -
+so the wait returns before the new process has logged anything, and
+`./restart.sh` can report success a moment early. Self-corrects on the next
+status call; harmless but wrong.
+
+The fix is a single `current_run()` helper - awk from the last `===== started`
+marker to the end - shared by both the startup wait and `status`, so the two
+cannot disagree about which run they are reading.
+
 ## 10. Prompt caching (ops, low priority)
 
 The brain injection currently lands situational profiles inside the system

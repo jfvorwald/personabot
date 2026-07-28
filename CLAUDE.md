@@ -29,20 +29,32 @@ marker, and `FUTURE.md` for the ranked roadmap of what's next.
 **Always `.venv/bin/python`, never bare `python`.** The dependencies are not
 installed system-wide.
 
-**Restart after every change.** A long-running daemon quietly serving stale
-code is the failure mode here:
+### Restart the bot. Every time. No exceptions.
+
+**Every interaction that touches this repo ends with `./restart.sh`** - and
+with its output shown, so the running process is never left behind what is on
+disk. This is not a step to remember at the end; it is part of the change.
 
 ```bash
 ./restart.sh
 ```
 
-It syntax-checks before deploying, waits for the old process to actually exit,
-and prints the live config - so the restart doubles as verification.
-`./restart.sh status` reports whether anything on disk is newer than the
-running process.
+If nothing was edited, run `./restart.sh status` instead and report it. Never
+answer "is it live?" from memory - the status output compares file mtimes
+against the process start time and answers it for real.
 
-The one exception: `brain/people/*.md` are re-read from disk on every reply and
-take effect immediately. Everything else needs the restart.
+`./restart.sh` syntax-checks, runs the tests, refuses to deploy if either
+fails, waits for the old process to actually exit, and prints the live config.
+It is the verification, not just the deploy.
+
+The one exception: `brain/people/*.md` and `brain/_index.json` are re-read from
+disk on every reply and take effect immediately. Everything else - `bot.py`,
+`brain.py`, `persona.md`, `psychology.md`, `.env` - needs the restart.
+
+Restarting is cheap and safe by design: the day's reply and reaction spend is
+persisted to `.bot_state.json` and restored on connect, so deploying does not
+hand the bot a fresh budget. `live.log` appends across restarts rather than
+being truncated.
 
 **Every change runs or updates the tests.** `./restart.sh` refuses to deploy
 on a failing suite, and runs them before stopping the old process, so a red

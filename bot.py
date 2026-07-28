@@ -25,6 +25,7 @@ import logging
 import os
 import random
 import sys
+import json
 import unicodedata
 from collections import deque
 from datetime import time as dtime
@@ -104,6 +105,11 @@ JOIN_WINDOW_MESSAGES = int(os.getenv("JOIN_WINDOW_MESSAGES", "8"))
 # brain.py; the live bot only reads them, and notes anyone it hasn't met so
 # the next scan has a to-do list. See brain/README.md.
 BRAIN_ENABLED = os.getenv("BRAIN_ENABLED", "true").lower() == "true"
+
+# Where the day's spend is kept so it survives a restart. Without this the
+# budget only ever bounds a single process: deploying re-draws it and zeroes
+# the counters, so a day with ten deploys has no effective cap at all.
+STATE_FILE = os.getenv("STATE_FILE", ".bot_state.json")
 
 # Names the bot answers to, beyond a real @mention. Deliberately does NOT
 # include a bare "jaq": the persona is called Jaq and so is its creator, so a
@@ -444,6 +450,7 @@ class PersonaBot(discord.Client):
             self._reactions_today -= 1  # hand the slot back
             return
         self._recent_reactions.append(choice)
+        self._save_day()
         log.info(
             "Reacted %s (%d/%s today)",
             choice,
@@ -487,6 +494,50 @@ class PersonaBot(discord.Client):
             max(0, JOIN_AFTER_MIN), max(0, JOIN_AFTER_MAX)
         )
 
+    def _state_path(self) -> str:
+        return os.path.join(os.path.dirname(os.path.abspath(__file__)), STATE_FILE)
+
+    def _save_day(self) -> None:
+        """Persist today's spend. Cheap, and it runs only when we post."""
+        try:
+            with open(self._state_path(), "w") as f:
+                json.dump(
+                    {
+                        "day": str(self._reply_day),
+                        "replies": self._replies_today,
+                        "reactions": self._reactions_today,
+                        "budget": self._daily_budget,
+                        "brushed_off": self._brushed_off_today,
+                    },
+                    f,
+                )
+        except OSError:
+            log.exception("Could not persist daily state")
+
+    def _restore_day(self, today) -> bool:
+        """Pick today's counters back up after a restart. False if it's a new day."""
+        try:
+            with open(self._state_path()) as f:
+                state = json.load(f)
+        except (OSError, ValueError):
+            return False
+        if state.get("day") != str(today):
+            return False
+
+        self._reply_day = today
+        self._replies_today = state.get("replies", 0)
+        self._reactions_today = state.get("reactions", 0)
+        self._daily_budget = state.get("budget")
+        self._brushed_off_today = state.get("brushed_off", False)
+        log.info(
+            "Resuming today: %d/%s replies and %d reactions already spent",
+            self._replies_today,
+            self._daily_budget if self._daily_budget is not None else "\u221e",
+            self._reactions_today,
+        )
+        self._schedule_pokes(today)
+        return True
+
     def _roll_day(self, today) -> None:
         """Start a new day with a fresh, randomly drawn reply budget."""
         self._reply_day = today
@@ -501,6 +552,7 @@ class PersonaBot(discord.Client):
                 max(1, LIVE_DAILY_MIN), LIVE_DAILY_MAX
             )
             log.info("New day (%s): budget is %d replies", today, self._daily_budget)
+        self._save_day()
         self._schedule_pokes(today)
 
     def _schedule_pokes(self, today) -> None:
@@ -582,9 +634,11 @@ class PersonaBot(discord.Client):
                 if BRAIN_ENABLED
                 else "off",
             )
-            # Draw today's budget and poke times up front, rather than waiting
-            # for the first message to trigger a day-roll.
-            self._roll_day(discord.utils.utcnow().astimezone(TIMEZONE).date())
+            # Restore today's spend if this is a restart rather than a new
+            # day; only draw a fresh budget when the date has actually rolled.
+            today = discord.utils.utcnow().astimezone(TIMEZONE).date()
+            if not self._restore_day(today):
+                self._roll_day(today)
             if not self.poke_ben.is_running():
                 self.poke_ben.start()
             if not self.idle_opener.is_running():
@@ -669,6 +723,7 @@ class PersonaBot(discord.Client):
                 # We're in the conversation now; the next one starts a fresh
                 # hang-back.
                 self._reset_hang_back()
+                self._save_day()
                 log.info(
                     "Replies today: %d/%s",
                     self._replies_today,

@@ -18,3 +18,4 @@ __pycache__/
 *.log
 .bot.pid
 .claude/
+.bot_state.json

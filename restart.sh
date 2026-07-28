@@ -97,15 +97,20 @@ stop() {
 }
 
 start() {
-    setsid nohup $PY bot.py --live > "$LOG" 2>&1 < /dev/null &
+    # Append rather than truncate: restarts are routine, and > would erase the
+    # record of everything the bot did before this deploy.
+    [ -f "$LOG" ] && [ "$(stat -c %s "$LOG")" -gt 5000000 ] && mv "$LOG" "$LOG.1"
+    printf '\n===== started %s =====\n' "$(date '+%Y-%m-%d %H:%M:%S')" >> "$LOG"
+    setsid nohup $PY bot.py --live >> "$LOG" 2>&1 < /dev/null &
     local pid=$!
     echo "$pid" > "$PIDFILE"
     for _ in $(seq 60); do
-        grep -q 'Live mode:' "$LOG" 2>/dev/null && break
+        # Only this run's tail — the log now spans previous deploys too.
+        tail -40 "$LOG" 2>/dev/null | grep -q 'Live mode:' && break
         kill -0 "$pid" 2>/dev/null || break
         sleep 0.5
     done
-    if ! grep -q 'Live mode:' "$LOG" 2>/dev/null; then
+    if ! tail -40 "$LOG" 2>/dev/null | grep -q 'Live mode:'; then
         echo "FAILED to start. Last lines of $LOG:"
         grep -viE 'pynacl|davey' "$LOG" | tail -15 | sed 's/^/    /'
         rm -f "$PIDFILE"
@@ -121,7 +126,9 @@ status() {
         return 1
     fi
     echo "running  pid $pid  since $(ps -o lstart= -p "$pid" | xargs)"
-    grep -E 'Live mode:|Mentions:|Allies:|New day|Poking|Idle openers:' "$LOG" 2>/dev/null |
+    # Only the current run: the log spans every deploy now.
+    awk '/^===== started/{buf=""} {buf=buf $0 ORS} END{printf "%s", buf}' "$LOG" 2>/dev/null |
+        grep -E 'Live mode:|Mentions:|Allies:|New day|Resuming today|Poking|Idle openers:' |
         tail -6 | sed 's/^.*personabot: /    /'
     local extra
     extra=$(pgrep -cf "$PATTERN")

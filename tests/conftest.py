@@ -78,6 +78,7 @@ def persona_bot(bot_module):
         user = me
 
     b = Testable.__new__(Testable)
+    b._reply_day = __import__('datetime').date(2026, 7, 28)
     b._reactions_today = 0
     b._replies_today = 0
     b._daily_budget = 100
@@ -86,6 +87,7 @@ def persona_bot(bot_module):
     b._hang_back_target = 3
     b._recent_reactions = __import__("collections").deque(maxlen=6)
     b._pending = set()
+    b._save_day = lambda: None  # persistence covered in test_daily_state
     return b
 
 
