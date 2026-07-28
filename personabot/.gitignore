@@ -8,6 +8,11 @@
 persona.md
 persona.*.md.bak
 
+# The brain. These are notes about real people, derived from a private
+# channel - the structure is public, the contents never are.
+brain/people/
+brain/_index.json
+
 .venv/
 __pycache__/
 *.log

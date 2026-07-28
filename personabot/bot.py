@@ -33,6 +33,8 @@ import discord
 from discord.ext import tasks
 from dotenv import load_dotenv
 
+import brain
+
 load_dotenv()
 
 logging.basicConfig(
@@ -92,6 +94,11 @@ JOIN_AFTER_MAX = int(os.getenv("JOIN_AFTER_MAX", "5"))
 # about something two topics back. Redraw and wait for the next opening rather
 # than answer stale context.
 JOIN_WINDOW_MESSAGES = int(os.getenv("JOIN_WINDOW_MESSAGES", "8"))
+
+# What Jaq knows about the people here. Profiles are written offline by
+# brain.py; the live bot only reads them, and notes anyone it hasn't met so
+# the next scan has a to-do list. See brain/README.md.
+BRAIN_ENABLED = os.getenv("BRAIN_ENABLED", "true").lower() == "true"
 
 # --- Making it behave like a person in a room, not a request handler --------
 #
@@ -549,8 +556,8 @@ class PersonaBot(discord.Client):
         await asyncio.sleep(think)
 
         channel = message.channel
-        transcript = await self.read_transcript(channel)
-        reply = await self.generate(transcript, may_stay_silent=True)
+        transcript, speakers = await self.read_transcript(channel)
+        reply = await self.generate(transcript, may_stay_silent=True, speakers=speakers)
         if not reply:
             return False
         if reply.strip().startswith(PASS_TOKEN):
@@ -602,8 +609,10 @@ class PersonaBot(discord.Client):
             log.info("Channel quiet %.1fh — opening a conversation", quiet_hours)
             try:
                 async with channel.typing():
-                    transcript = await self.read_transcript(channel)
-                    line = await self.generate(transcript, instruction=OPENER_PROMPT)
+                    transcript, speakers = await self.read_transcript(channel)
+                    line = await self.generate(
+                        transcript, instruction=OPENER_PROMPT, speakers=speakers
+                    )
                 if not line:
                     return
                 await channel.send(line[:MAX_DISCORD_CHARS])
@@ -618,8 +627,9 @@ class PersonaBot(discord.Client):
 
     async def send_brush_off(self, channel):
         try:
+            transcript, speakers = await self.read_transcript(channel)
             line = await self.generate(
-                await self.read_transcript(channel), instruction=BRUSH_OFF_PROMPT
+                transcript, instruction=BRUSH_OFF_PROMPT, speakers=speakers
             )
         except Exception:
             log.exception("Could not generate a sign-off; using the fallback")
@@ -662,9 +672,11 @@ class PersonaBot(discord.Client):
         target = who.mention if who else LIVE_COUNTERPARTS[0]
 
         async with channel.typing():
-            transcript = await self.read_transcript(channel)
+            transcript, speakers = await self.read_transcript(channel)
             line = await self.generate(
-                transcript, instruction=POKE_PROMPT.format(target=target)
+                transcript,
+                instruction=POKE_PROMPT.format(target=target),
+                speakers=speakers,
             )
         if not line:
             log.warning("Poke produced nothing")
@@ -692,8 +704,8 @@ class PersonaBot(discord.Client):
     async def speak(self, may_stay_silent: bool = False) -> bool:
         """Post one in-character message. Returns True if something was sent."""
         channel = self.get_channel(CHANNEL_ID) or await self.fetch_channel(CHANNEL_ID)
-        transcript = await self.read_transcript(channel)
-        reply = await self.generate(transcript, may_stay_silent)
+        transcript, speakers = await self.read_transcript(channel)
+        reply = await self.generate(transcript, may_stay_silent, speakers=speakers)
         if not reply:
             log.warning("Model returned no text; nothing posted")
             return False
@@ -704,27 +716,50 @@ class PersonaBot(discord.Client):
         log.info("Posted %d chars to #%s", len(reply), channel.name)
         return True
 
-    async def read_transcript(self, channel) -> str:
-        """Render the recent channel history oldest-first, labelled by speaker."""
+    async def read_transcript(self, channel) -> tuple[str, set[int]]:
+        """Render recent history oldest-first, and note who's in the room.
+
+        The author ids come back with the text so the brain can load profiles
+        for exactly the people present, rather than everyone Jaq has ever met.
+        """
         lines = []
+        speakers: set[int] = set()
         async for msg in channel.history(limit=HISTORY_LIMIT):
             text = msg.clean_content.strip()
             if not text:
                 continue
+            if msg.author.id != self.user.id:
+                speakers.add(msg.author.id)
+                if BRAIN_ENABLED and brain.note_seen(
+                    msg.author.id, msg.author.display_name, msg.author.name
+                ):
+                    log.info(
+                        "First time meeting %s — noted for the next brain scan",
+                        msg.author.display_name,
+                    )
             who = "You" if msg.author.id == self.user.id else msg.author.display_name
             stamp = msg.created_at.astimezone(TIMEZONE).strftime("%a %H:%M")
             lines.append(f"[{stamp}] {who}: {text}")
         lines.reverse()
-        return "\n".join(lines)
+        return "\n".join(lines), speakers
 
     async def generate(
         self,
         transcript: str,
         may_stay_silent: bool = False,
         instruction: str | None = None,
+        speakers: set[int] | None = None,
     ) -> str:
         framing = FRAMING + (SILENCE_OPTION if may_stay_silent else "")
         system = f"{self.persona}\n\n---\n\n{framing}"
+        if BRAIN_ENABLED:
+            try:
+                notes = brain.load_for(speakers or set())
+            except Exception:
+                log.exception("Brain failed to load; carrying on without it")
+                notes = ""
+            if notes:
+                system = f"{system}\n\n---\n\n{notes}"
         if instruction:
             user = (
                 "Here is the recent conversation in the channel:\n\n"
