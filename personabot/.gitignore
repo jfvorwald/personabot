@@ -1,0 +1,15 @@
+# Secrets. .env holds your Discord token and Anthropic key - and so does any
+# backup of it, which is the easy one to forget.
+.env
+.env.*
+!.env.example
+
+# Your actual persona. persona.example.md is the shared template.
+persona.md
+persona.*.md.bak
+
+.venv/
+__pycache__/
+*.log
+.bot.pid
+.claude/
