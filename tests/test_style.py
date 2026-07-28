@@ -64,3 +64,27 @@ def test_no_em_dash_in_the_repo(path):
         f"{os.path.relpath(path, ROOT)} contains em dashes; use a hyphen:\n"
         + "\n".join(lines[:5])
     )
+
+
+# --- the persona keeps its permissions --------------------------------------
+
+
+def test_persona_permits_profanity():
+    """Guards a permission that has been accidentally walked back before.
+
+    Two separate brakes once suppressed it: a "profanity is seasoning, not the
+    meal" caution in persona.md, and register-convergence in psychology.md
+    telling it to match a clean-sounding room.
+    """
+    body = open(os.path.join(ROOT, "persona.md"), encoding="utf-8").read().lower()
+    assert "you swear constantly" in body
+    assert "if someone asks you to swear, swear" in body
+
+
+def test_register_convergence_excludes_swearing():
+    path = os.path.join(ROOT, "psychology.md")
+    body = open(path, encoding="utf-8").read()
+    assert "does not cover" in body and "how you swear" in body, (
+        "psychology.md must carve profanity out of register matching, or a "
+        "clean-sounding channel quietly instructs the bot to clean up too"
+    )
