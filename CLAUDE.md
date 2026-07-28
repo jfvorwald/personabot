@@ -22,6 +22,7 @@ person-shaped - not whether it's faster or answers more.
 - `prompts.py` - every fixed string the model is shown.
 - `persona.py` - loads `persona.md`, `psychology.md`, and the post schedule.
 - `brain.py` - what Jaq knows about the people here. Module + CLI.
+- `changelog.py` - reads the git log for patch notes.
 - `persona.md` - who Jaq is, in the system prompt verbatim. Untracked.
 - `psychology.md` - how conversation works. A separate block on purpose, so the
   two stay independently editable.
@@ -78,6 +79,16 @@ so it asserts against documented defaults rather than this machine's config.
 `.venv/bin/python doctor.py` checks each layer in order - env vars, Anthropic
 round-trip, Discord login, channel access - and stops at the first failure.
 `bot.py --now` posts one real message and exits.
+
+## Commit messages are read out loud
+
+When someone in the channel asks for an update, the bot answers with patch
+notes generated from `git log` over the last 24 hours. Commit **subjects** are
+handed to the model and paraphrased into the channel, so write them knowing
+they may be repeated in front of everyone. Bodies are not used.
+
+The prompt frames the changes as things done *to* Jaq rather than by him, which
+is what keeps a fourth-wall feature in character, and forbids naming files.
 
 ## Never use an em dash
 

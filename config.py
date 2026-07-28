@@ -75,6 +75,10 @@ JOIN_WINDOW_MESSAGES = int(os.getenv("JOIN_WINDOW_MESSAGES", "8"))
 # the next scan has a to-do list. See brain/README.md.
 BRAIN_ENABLED = os.getenv("BRAIN_ENABLED", "true").lower() == "true"
 
+# How far back patch notes look. Someone asking "any updates?" means today,
+# not this quarter.
+PATCH_NOTES_HOURS = int(os.getenv("PATCH_NOTES_HOURS", "24"))
+
 # Where the day's spend is kept so it survives a restart. Without this the
 # budget only ever bounds a single process: deploying re-draws it and zeroes
 # the counters, so a day with ten deploys has no effective cap at all.

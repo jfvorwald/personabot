@@ -107,3 +107,36 @@ def is_question(text: str, my_names: set[str]) -> bool:
         and words[0] in AUXILIARIES
         and words[1] in QUESTION_SUBJECTS | tokens
     )
+
+
+# Asking what changed. Kept broad because people ask this a dozen ways, and the
+# cost of a false positive is one in-character brush-off rather than silence.
+UPDATE_WORDS = {
+    "update", "updates", "updated", "patch", "patches", "changelog",
+    "changes", "changed", "release", "notes", "new",
+}
+UPDATE_PHRASES = (
+    "what's new", "whats new", "what is new",
+    "patch notes", "release notes", "change log",
+    "anything new", "anything change", "what changed", "what did they change",
+    "what did they do", "what have they done", "sitrep",
+)
+
+
+def is_update_request(text: str) -> bool:
+    """Is this asking what was done to us lately?
+
+    Requires a question shape or an explicit patch-notes phrase, so ordinary
+    talk about updating something else does not trigger it - "I updated my
+    drivers" is not a request for a changelog.
+    """
+    lowered = text.strip().lower()
+    if not lowered:
+        return False
+    if any(p in lowered for p in UPDATE_PHRASES):
+        return True
+    words = {w.strip("?!.,:;") for w in lowered.split()}
+    if not words & UPDATE_WORDS:
+        return False
+    # A bare mention of the word is not a request; asking is.
+    return lowered.endswith("?") or bool(words & {"any", "got", "gimme", "give"})

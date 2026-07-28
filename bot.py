@@ -35,6 +35,7 @@ import discord
 from discord.ext import tasks
 
 import brain
+import changelog
 import decide
 import react
 from decide import fold
@@ -51,6 +52,8 @@ from config import *  # noqa: F403  (every setting, by name)
 
 from prompts import (
     BRUSH_OFF_PROMPT,
+    NO_UPDATES_PROMPT,
+    PATCH_NOTES_PROMPT,
     FALLBACK_BRUSH_OFF,
     FRAMING,
     MAX_DISCORD_CHARS,
@@ -457,6 +460,24 @@ class PersonaBot(discord.Client):
             {message.author.display_name, message.author.name or ""}, ALLIES
         )
 
+    def _wants_patch_notes(self, message: discord.Message) -> bool:
+        """Asking us what has changed about us lately."""
+        return self._addressed_to_me(message) and decide.is_update_request(
+            message.clean_content
+        )
+
+    def _patch_notes_instruction(self) -> str:
+        """Real commits if there are any, otherwise the brush-off."""
+        here = os.path.dirname(os.path.abspath(__file__))
+        changes = changelog.summarise(
+            changelog.recent_commits(PATCH_NOTES_HOURS, cwd=here)
+        )
+        if not changes:
+            log.info("Patch notes requested; nothing shipped in %dh", PATCH_NOTES_HOURS)
+            return NO_UPDATES_PROMPT
+        log.info("Patch notes requested; %d changes to report", changes.count("\n") + 1)
+        return PATCH_NOTES_PROMPT.format(changes=changes)
+
     def _direct_question(self, message: discord.Message) -> bool:
         """Addressed to us, and shaped like a question."""
         if not self._addressed_to_me(message):
@@ -569,7 +590,7 @@ class PersonaBot(discord.Client):
                 log.info("Not engaging with this one")
                 self._react_later(message)
                 return False
-        elif self._direct_question(message):
+        elif self._direct_question(message) or self._wants_patch_notes(message):
             # Adjacency pairs: a question aimed at us makes an answer
             # conditionally relevant, and a missing second part is conspicuous.
             # Hanging back through one doesn't read as staying quiet, it reads
@@ -614,7 +635,16 @@ class PersonaBot(discord.Client):
 
         channel = message.channel
         transcript, speakers = await self.read_transcript(channel)
-        reply = await self.generate(transcript, may_stay_silent=True, speakers=speakers)
+        if self._wants_patch_notes(message):
+            reply = await self.generate(
+                transcript,
+                instruction=self._patch_notes_instruction(),
+                speakers=speakers,
+            )
+        else:
+            reply = await self.generate(
+                transcript, may_stay_silent=True, speakers=speakers
+            )
         if not reply:
             return False
         if reply.strip().startswith(PASS_TOKEN):
