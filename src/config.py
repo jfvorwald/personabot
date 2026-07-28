@@ -95,6 +95,14 @@ ART_OVERKILL_CHANCE = float(os.getenv("ART_OVERKILL_CHANCE", "0.12"))
 # A question long enough to be interesting does not need a diagram.
 ART_TRIVIAL_MAX_WORDS = int(os.getenv("ART_TRIVIAL_MAX_WORDS", "8"))
 
+# Polls. Escalating a disagreement into a formal vote is the joke, and it is
+# only funny while it stays rare - a channel with a poll in it every hour is
+# a channel nobody votes in. Discord requires a duration of at least an hour.
+POLL_ENABLED = os.getenv("POLL_ENABLED", "true").lower() == "true"
+POLL_DAILY_MAX = int(os.getenv("POLL_DAILY_MAX", "2"))
+POLL_CHANCE = float(os.getenv("POLL_CHANCE", "0.35"))
+POLL_HOURS = int(os.getenv("POLL_HOURS", "4"))
+
 # Where the day's spend is kept so it survives a restart. Without this the
 # budget only ever bounds a single process: deploying re-draws it and zeroes
 # the counters, so a day with ten deploys has no effective cap at all.

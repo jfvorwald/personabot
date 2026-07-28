@@ -28,6 +28,7 @@ import sys
 import json
 import unicodedata
 from collections import deque
+import datetime
 from datetime import time as dtime
 
 import anthropic
@@ -57,6 +58,8 @@ from prompts import (
     BRUSH_OFF_PROMPT,
     NO_UPDATES_PROMPT,
     PATCH_NOTES_PROMPT,
+    POLL_LOST_PROMPT,
+    POLL_PROMPT,
     FALLBACK_BRUSH_OFF,
     FRAMING,
     MAX_DISCORD_CHARS,
@@ -102,6 +105,9 @@ class PersonaBot(discord.Client):
         self._messages_waited = 0
         self._reactions_today = 0
         self._art_today = 0
+        self._polls_today = 0
+        self._polls_today = 0
+        self._open_polls: list[int] = []
         self._recent_reactions: deque = deque(maxlen=REACT_RECENT_MEMORY)
         self._pending: set = set()
         self._reset_hang_back()
@@ -225,6 +231,8 @@ class PersonaBot(discord.Client):
                         "replies": self._replies_today,
                         "reactions": self._reactions_today,
                         "art": self._art_today,
+                        "polls": self._polls_today,
+                        "open_polls": self._open_polls,
                         "budget": self._daily_budget,
                         "brushed_off": self._brushed_off_today,
                     },
@@ -247,6 +255,8 @@ class PersonaBot(discord.Client):
         self._replies_today = state.get("replies", 0)
         self._reactions_today = state.get("reactions", 0)
         self._art_today = state.get("art", 0)
+        self._polls_today = state.get("polls", 0)
+        self._open_polls = state.get("open_polls", [])
         self._daily_budget = state.get("budget")
         self._brushed_off_today = state.get("brushed_off", False)
         log.info(
@@ -474,6 +484,90 @@ class PersonaBot(discord.Client):
             message.clean_content
         )
 
+    def _wants_poll(self, message: discord.Message, transcript: str) -> bool:
+        """Is this a moment to escalate an argument into a formal vote?
+
+        Only when an argument already exists. Manufacturing one out of a quiet
+        conversation is a bot being random, which is the opposite of the joke.
+        """
+        if not POLL_ENABLED:
+            return False
+        if decide.is_poll_request(message.clean_content):
+            return True
+        if POLL_DAILY_MAX and self._polls_today >= POLL_DAILY_MAX:
+            return False
+        if not decide.looks_like_a_dispute(transcript.splitlines()):
+            return False
+        return random.random() <= POLL_CHANCE
+
+    async def _send_poll(self, channel, text: str) -> bool:
+        """Turn a parsed reply into a real Discord poll. False if it wasn't one."""
+        parsed = decide.parse_poll(text)
+        if not parsed:
+            log.info("Model did not return a usable poll; sending as text")
+            return False
+        question, answers = parsed
+
+        poll = discord.Poll(
+            question=question, duration=datetime.timedelta(hours=POLL_HOURS)
+        )
+        for answer in answers:
+            poll.add_answer(text=answer)
+        try:
+            sent = await channel.send(poll=poll)
+        except discord.HTTPException:
+            log.exception("Discord rejected the poll")
+            return False
+
+        self._polls_today += 1
+        # Remembered so we can be told about it when it goes against us.
+        self._open_polls.append(sent.id)
+        self._save_day()
+        log.info("Posted poll %r with %d options", question[:60], len(answers))
+        return True
+
+    async def _check_polls(self, channel) -> None:
+        """Notice when a poll we started has finished badly.
+
+        Only losses are worth a message. Winning a vote you called yourself is
+        not a story.
+        """
+        if not self._open_polls:
+            return
+        still_open = []
+        for message_id in list(self._open_polls):
+            try:
+                message = await channel.fetch_message(message_id)
+            except discord.HTTPException:
+                continue  # deleted or unreachable; drop it
+            poll = message.poll
+            if poll is None:
+                continue
+            if not poll.is_finalised():
+                still_open.append(message_id)
+                continue
+
+            winner = poll.victor_answer
+            # Our position is always the first option, by construction.
+            ours = poll.answers[0] if poll.answers else None
+            if winner is None or ours is None or winner.id == ours.id:
+                continue
+            log.info("Lost a poll: %r beat %r", winner.text, ours.text)
+            result = (
+                f"{winner.text} ({winner.vote_count} votes) beat "
+                f"{ours.text} ({ours.vote_count})"
+            )
+            transcript, speakers = await self.read_transcript(channel)
+            line = await self.generate(
+                transcript,
+                instruction=POLL_LOST_PROMPT.format(result=result),
+                speakers=speakers,
+            )
+            if line:
+                await channel.send(line[:MAX_DISCORD_CHARS])
+        self._open_polls = still_open
+        self._save_day()
+
     def _art_instruction(self, message: discord.Message) -> str | None:
         """ASCII art, if this is the moment for it.
 
@@ -627,6 +721,7 @@ class PersonaBot(discord.Client):
             self._direct_question(message)
             or self._wants_patch_notes(message)
             or (ART_ENABLED and decide.is_art_request(message.clean_content))
+            or (POLL_ENABLED and decide.is_poll_request(message.clean_content))
         ):
             # Adjacency pairs: a question aimed at us makes an answer
             # conditionally relevant, and a missing second part is conspicuous.
@@ -672,6 +767,14 @@ class PersonaBot(discord.Client):
 
         channel = message.channel
         transcript, speakers = await self.read_transcript(channel)
+        if self._wants_poll(message, transcript):
+            drafted = await self.generate(
+                transcript, instruction=POLL_PROMPT, speakers=speakers
+            )
+            if drafted and await self._send_poll(channel, drafted):
+                return True
+            # Fell through: not a usable poll, so carry on as a normal reply.
+
         art = self._art_instruction(message)
         if self._wants_patch_notes(message):
             reply = await self.generate(
@@ -821,7 +924,20 @@ class PersonaBot(discord.Client):
         self._replies_today += 1
         log.info("Poked %s: %s", target, line[:80])
 
+    async def _poll_tick(self):
+        """Fold the finished-poll check into a timer that already exists."""
+        try:
+            channel = self.get_channel(CHANNEL_ID) or await self.fetch_channel(
+                CHANNEL_ID
+            )
+            await self._check_polls(channel)
+        except Exception:
+            log.exception("Poll check failed")
+
     async def _idle_tick(self):
+        # The finished-poll check rides the same timer rather than adding a
+        # second loop; both want to run every IDLE_CHECK_MINUTES.
+        await self._poll_tick()
         try:
             await self._maybe_open()
         except Exception:

@@ -196,3 +196,74 @@ def is_trivial_question(text: str, max_words: int) -> bool:
     return stripped.endswith("?") or bool(
         {w.strip("?!.,") for w in stripped.lower().split()} & (WH_WORDS | AUXILIARIES)
     )
+
+
+# Someone asking for it outright.
+POLL_PHRASES = (
+    "put it to a vote", "put it to the vote", "poll it", "make a poll",
+    "start a poll", "let's vote", "lets vote", "we should vote", "vote on it",
+    "democracy", "poll the channel", "poll the room",
+)
+# Signs an argument is actually happening, rather than people agreeing loudly.
+DISPUTE_MARKERS = (
+    "no it isn't", "no it's not", "you're wrong", "youre wrong", "that's wrong",
+    "thats wrong", "bullshit", "prove it", "says who", "disagree", "wrong again",
+    "it literally", "actually no", "no i didn't", "no i didnt", "did not",
+    "objection", "cope", "wrong", "nope",
+)
+
+
+def is_poll_request(text: str) -> bool:
+    """Did someone ask for a vote?"""
+    lowered = text.strip().lower()
+    return bool(lowered) and any(p in lowered for p in POLL_PHRASES)
+
+
+def looks_like_a_dispute(lines: list[str]) -> bool:
+    """Is there an actual argument in the recent transcript?
+
+    A poll is only funny as an escalation of a disagreement that already
+    exists. Manufacturing one out of a quiet conversation is a bot being
+    random, which is the opposite of the joke.
+    """
+    recent = " ".join(lines[-6:]).lower()
+    if not recent.strip():
+        return False
+    return any(m in recent for m in DISPUTE_MARKERS)
+
+
+# Discord's own limits. Exceeding them is a rejected message, not a truncated
+# one, so they are enforced here rather than hoped for in the prompt.
+POLL_QUESTION_MAX = 300
+POLL_ANSWER_MAX = 55
+POLL_MIN_ANSWERS = 2
+POLL_MAX_ANSWERS = 10
+
+
+def parse_poll(text: str) -> tuple[str, list[str]] | None:
+    """Pull a question and options out of the model's reply.
+
+    Returns None if the shape is wrong or anything breaks Discord's limits, so
+    a malformed poll degrades into an ordinary message rather than a rejected
+    send.
+    """
+    question = ""
+    answers: list[str] = []
+    for raw in text.splitlines():
+        line = raw.strip()
+        if not line:
+            continue
+        if line.lower().startswith("q:"):
+            question = line[2:].strip()
+        elif line.startswith(("-", "*")):
+            answer = line[1:].strip()
+            if answer:
+                answers.append(answer)
+
+    if not question or len(question) > POLL_QUESTION_MAX:
+        return None
+    if not POLL_MIN_ANSWERS <= len(answers) <= POLL_MAX_ANSWERS:
+        return None
+    if any(not a or len(a) > POLL_ANSWER_MAX for a in answers):
+        return None
+    return question, answers

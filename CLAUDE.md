@@ -30,6 +30,9 @@ brain/     profile data (contents gitignored)
 - `src/persona.py` - loads `persona.md`, `psychology.md`, and the post schedule.
 - `src/brain.py` - what Jaq knows about the people here. Module + CLI.
 - `src/changelog.py` - reads the git log for patch notes.
+- Polls are native Discord polls (`discord.Poll`), needing the `send_polls`
+  permission. Its own position is always the first option, which is how
+  the bot knows later whether it lost.
 - `src/paths.py` - where the repo root is. The only place that is written down.
 - `tools/doctor.py`, `tools/setup_env.py` - run by a human, never imported.
 - `persona.md` / `psychology.md` - content, at the root where you edit them.

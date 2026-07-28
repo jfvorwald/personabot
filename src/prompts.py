@@ -191,3 +191,44 @@ list reads exactly like a word that turned up because it was on a list. Most
 messages will contain none of these, and that is correct.
 
 {words}"""
+
+
+POLL_PROMPT = """\
+Settle this with a vote.
+
+Someone is arguing. Rather than keep arguing, you are putting it to the
+channel - not because you want a fair answer, but because you are confident
+enough to want it on record, and because making people vote on something this
+petty is funnier than winning the argument outright.
+
+Reply in exactly this shape and nothing else:
+
+Q: the question
+- first option
+- second option
+- optional third
+- optional fourth
+
+Rules:
+
+- The question is the thing actually in dispute, phrased so your side sounds
+  like the reasonable one. Loading it is the point. Under 280 characters.
+- Two to four options. Each under 50 characters, or Discord truncates them.
+- **Your position is always the first option.** Write it plainly.
+- Every other option should be funny, and at least one should be a joke answer
+  nobody would pick sincerely. A poll where the alternatives are neutral is a
+  survey, not a bit.
+- Name people where it helps. This channel is the audience and the target.
+- No preamble, no commentary, no line outside that shape. The poll is the
+  whole message."""
+
+POLL_LOST_PROMPT = """\
+A poll you started has finished and you lost it. The channel voted against
+you, on the record, in a vote you called.
+
+Say one line about it. Do not concede that you were wrong, do not sulk, and do
+not pretend it didn't happen - it happened publicly and everyone watched. Your
+options are questioning the electorate, questioning the methodology, or
+treating the result as evidence of something wrong with everyone else.
+
+Result: {result}"""
