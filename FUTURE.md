@@ -220,7 +220,40 @@ copied verbatim rather than used as register - it also happened with the
 swearing examples and the compassion line. Rules generalise; examples get
 reproduced.
 
-## 11. Link and media behavior## 11. Link and media behavior
+### The render-then-convert engine, tabled on cost
+
+Typed art is still mediocre, so the next version was built and tested: have the
+model draw a black silhouette with PIL primitives in Anthropic's code execution
+sandbox, then reduce the raster to characters through a ten-step ramp. The
+conversion is arithmetic, so alignment stops being something the model has to
+get right by eye, and inside the sandbox it sees its own render and revises it -
+observed noticing resampling artefacts and redrawing at a higher supersample
+without being asked.
+
+**It works and it is far better looking. It was dropped on price.** Measured
+end to end on `claude-opus-5` with `code_execution_20260521`:
+
+| subject         | time | output tokens |
+| --------------- | ---- | ------------- |
+| whiskey bottle  | 42s  | 2,503         |
+| cow head        | 64s  | 3,822         |
+| dog             | 153s | 8,984         |
+
+Bounding it to a single revision brought the dog to 82s / ~5k with quality
+intact, so the real figure is **40-85 seconds and $0.06-0.12 a drawing** -
+roughly a hundred times an ordinary reply, for a bit that fires once a day.
+Not worth it at this channel's volume.
+
+The sandbox is a requirement, not a nicety, if this is ever picked back up:
+the subject comes from a Discord message, so untrusted input is shaping the
+code being run, and that does not execute in the bot's process.
+
+What it would take to make this viable: a cheaper model for the drawing step,
+a cache keyed on subject so repeat requests are free, and running it as a
+background task like reactions so an 80-second render cannot hold the reply
+lock and stall an `@mention`.
+
+## 11. Link and media behavior
 
 A large share of how this group actually communicates is links, Tenor GIFs, and
 custom emotes with no comment attached. The bot only ever produces prose, which
