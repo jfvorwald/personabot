@@ -203,15 +203,24 @@ Do it as cleanup, not as a priority. Relevant numbers on `claude-sonnet-5`:
 1024-token minimum cacheable prefix (the system prompt is ~5-6k, so it
 qualifies), cache reads ~0.1x, writes 1.25x at the 5-minute TTL.
 
-## 14. ASCII art: the forms that don't work yet
+## 14. ASCII art: what the research actually showed
 
-Shipped for row-based forms (charts, flowcharts, tables). Figures, faces and
-anything with a closed border still come out a character misaligned, which
-reads as broken rather than as a drawing. If that is worth fixing, the route is
-a small curated library of hand-checked pieces the model picks from rather than
-generates - fresh generation is what makes alignment unreliable.
+Resolved. The first version steered toward charts because figures came out
+misaligned, but that was generalising from the two hardest cases - a likeness
+of a specific person, and closed borders. Comparing four prompting strategies
+on ordinary subjects showed the model draws recognisable pictures fine.
 
-## 11. Link and media behavior
+What won: explicit rules. Restrict the character vocabulary, bound rows and
+columns, say "work out the silhouette first", demand nothing but the art.
+
+What lost, and it is worth remembering: **few-shot examples.** Shown three
+sample drawings and asked for a dog, the model returned the cat from the
+examples. That is the third time in this project examples in a prompt were
+copied verbatim rather than used as register - it also happened with the
+swearing examples and the compassion line. Rules generalise; examples get
+reproduced.
+
+## 11. Link and media behavior## 11. Link and media behavior
 
 A large share of how this group actually communicates is links, Tenor GIFs, and
 custom emotes with no comment attached. The bot only ever produces prose, which

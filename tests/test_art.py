@@ -143,12 +143,25 @@ def test_prompt_bans_emoji_inside_the_block(persona_bot):
     assert "No emoji" in out
 
 
-def test_prompt_steers_away_from_forms_that_need_alignment(persona_bot):
-    """Testing showed figures and closed boxes come out a character off and
-    read as broken; row-based forms tolerate it."""
+def test_prompt_asks_for_an_actual_drawing(persona_bot):
+    """The first version steered toward charts because figures came out
+    misaligned. That solved a different problem than the one asked for -
+    comparing four prompting strategies showed explicit rules produce
+    recognisable pictures, and it was few-shot examples that failed."""
     out = persona_bot._art_instruction(_msg("draw zack"))
-    assert "bar charts" in out
-    assert "symmetrical boxes" in out
+    assert "An actual picture of the thing" in out
+    assert "silhouette first" in out
+
+
+def test_prompt_restricts_the_character_vocabulary(persona_bot):
+    """The single most effective constraint in testing."""
+    out = persona_bot._art_instruction(_msg("draw zack"))
+    assert "Plain ASCII only" in out
+
+
+def test_prompt_does_not_dodge_drawing_people(persona_bot):
+    out = persona_bot._art_instruction(_msg("draw zack"))
+    assert "including people" in out
 
 
 # --- the count survives a restart -------------------------------------------

@@ -93,11 +93,15 @@ round-trip, Discord login, channel access - and stops at the first failure.
 
 ## ASCII art only renders inside a code fence
 
-Discord uses a proportional font everywhere else, so unfenced art collapses.
-Emoji inside the fence are double-width and shear every line beneath them.
-Testing showed the model handles row-based forms well - bar charts,
-flowcharts, decision tables - and reliably misses by a character on anything
-needing closed borders, so `src/prompts.py` steers toward the former.
+Discord uses a proportional font everywhere else, so unfenced art collapses,
+and emoji inside the fence are double-width and shear every line beneath them.
+
+The directive asks for actual drawings of anything, including people. What made
+that work was explicit rules - a restricted character vocabulary, bounded rows
+and columns, and "work out the silhouette first". What broke it was few-shot
+examples, which the model copies verbatim rather than treating as style. That
+failure has now happened three times in this project; prefer rules over
+examples in any prompt here.
 
 ## Commit messages are read out loud
 

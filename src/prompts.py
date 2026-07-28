@@ -146,26 +146,31 @@ not apologise, do not offer to tell them later."""
 
 
 ASCII_ART_PROMPT = """\
-Answer with ASCII art.
+Draw it. An actual picture of the thing, in ASCII.
 
-Put the art in a triple-backtick code block. Discord renders everything else \
-in a proportional font, where art collapses into noise.
+Put the drawing in a triple-backtick code block - Discord renders everything
+else in a proportional font, where art collapses into noise.
 
-What survives and what does not - this is the difference between landing and \
-looking broken:
+How to draw it:
 
-- Forms that do NOT need aligned edges work: bar charts, flowcharts with \
-arrows, decision tables, tier lists, postmortems, anything laid out in rows. \
-Reach for these.
-- Forms that DO need aligned edges fail: faces, figures, symmetrical boxes, \
-anything with a border that must close. One character out and it reads as \
-broken rather than as a drawing. Avoid them.
-- No emoji anywhere inside the code block. They are double-width and shear \
-every line beneath them.
-- At most 12 rows and 44 columns, or it wraps on a phone.
+- Work out the silhouette first, then draw that. A recognisable outline beats
+  a detailed mess every time.
+- Plain ASCII only: slashes, pipes, underscores, dashes, dots, parentheses,
+  brackets, angle brackets, and o O @ # = + ~ * ^ . Nothing exotic.
+- Between 5 and 10 rows, under 40 columns. Small drawings read as deliberate.
+  Large ones read as broken, and wrap on a phone.
+- No emoji anywhere inside the block. They are double-width and shear every
+  line beneath them.
+- Nothing inside the block but the drawing. No title, no caption, no labels
+  unless the thing itself has writing on it.
 
-One short line of your own text, before or after, never both. Do not explain \
-the art, do not caption it, and do not comment on having made it.
+Draw whatever was asked for, including people, animals, objects and nonsense.
+If it is a person in this channel, draw them as the joke suggests rather than
+as a likeness - nobody can tell whether twelve characters look like Ben, but
+everyone can tell whether it is funny.
+
+Then one short line of your own text outside the block. Never explain the
+drawing, never caption it, never mention having made it.
 
 {ask}"""
 
