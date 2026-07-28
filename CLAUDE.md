@@ -16,6 +16,8 @@ person-shaped - not whether it's faster or answers more.
 - `bot.py` - the bot. Three modes: `--now`, `--live`, scheduled (no flag).
 - `brain.py` - what Jaq knows about the people in the channel. Module + CLI.
 - `persona.md` - who Jaq is, dropped into the system prompt verbatim. Untracked.
+- `psychology.md` - how conversation works. A separate prompt block on
+  purpose, so the two stay independently editable.
 - `restart.sh` - deploy / status / stop / logs for the live process.
 
 Read `README.md` for the modes and the full config surface,
@@ -41,6 +43,17 @@ running process.
 
 The one exception: `brain/people/*.md` are re-read from disk on every reply and
 take effect immediately. Everything else needs the restart.
+
+**Every change runs or updates the tests.** `./restart.sh` refuses to deploy
+on a failing suite, and runs them before stopping the old process, so a red
+suite can't take the bot down. `SKIP_TESTS=1 ./restart.sh` is the escape hatch.
+
+```bash
+.venv/bin/pytest tests/ -q
+```
+
+The suite is hermetic - no network, and it deliberately ignores the real `.env`
+so it asserts against documented defaults rather than this machine's config.
 
 **Verify against Discord, not just against the parser.**
 `.venv/bin/python doctor.py` checks each layer in order - env vars, Anthropic

@@ -160,6 +160,22 @@ voice connection, TTS, turn-taking, interruption handling.
 
 Decide the disclosure question *before* building this one.
 
+## 12. The influence half of the psychology material
+
+`psychology.md` carries the conversational-mechanics half of a behavioral
+ruleset. The other half - motivational interviewing, reactance, Cialdini's
+triggers, warmth/competence trust-building, framing ethics - was deliberately
+left out, and should stay out unless the bot's job changes.
+
+It is written for an assistant that serves a user and wants to influence them.
+Jaq does neither. Three of its rules directly contradict `persona.md`: lead with
+warmth (vs "funny first and polite never"), validate before advising (vs "mean
+is the love language"), and scale politeness to the imposition (vs deliberately
+impolite). Loading contradictory instructions is what made the persona bland in
+the first place.
+
+Revisit only if the bot ever acquires a job where persuasion is the point.
+
 ## 10. Prompt caching (ops, low priority)
 
 The brain injection currently lands situational profiles inside the system

@@ -101,6 +101,18 @@ Rules:
 # --- storage ---------------------------------------------------------------
 
 
+def count_new(message_ids: list[int], since: int) -> int:
+    """How many of these messages postdate the last one we read.
+
+    Snowflake ids are monotonic, so this is exact. The obvious alternative —
+    comparing this scan's message count against the previous scan's — is not:
+    BRAIN_SCAN_LIMIT is a sliding window, so a person's count inside it drifts
+    down as other people talk, the delta never reaches BRAIN_MIN_NEW, and every
+    profile freezes permanently after the first scan.
+    """
+    return sum(1 for mid in message_ids if mid > since)
+
+
 def _is_excluded(user_id: str, handle: str, display: str) -> bool:
     """Never-profile check. Ids are authoritative; names are a convenience.
 
@@ -358,7 +370,7 @@ async def scan(channel_id: int, force: bool) -> int:
                 # freezes after the first scan. Snowflake ids are monotonic, so
                 # "id greater than the last one we read" is exact.
                 since = entry.get("last_message_id") or 0
-                fresh = sum(1 for mid in ids_by_author[uid] if mid > since)
+                fresh = count_new(ids_by_author[uid], since)
                 if not force and fresh < BRAIN_MIN_NEW:
                     print(
                         f"  {display:20s} {len(entries):5d} msgs - "

@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Deploy / control the live persona bot.
 #
-#   ./restart.sh            syntax-check, restart, verify nothing is stale
+#   ./restart.sh            syntax-check, run tests, restart, verify
+#   SKIP_TESTS=1 ./restart.sh   deploy without the test gate (escape hatch)
 #   ./restart.sh status     running? since when? config loaded? anything stale?
 #   ./restart.sh stop       shut it down
 #   ./restart.sh logs       follow the log
@@ -35,6 +36,22 @@ bot_pid() {
         rm -f "$PIDFILE"
     fi
     pgrep -f "$PATTERN" | head -1
+}
+
+check_tests() {
+    # The suite is fast and hermetic (no network, no real .env), so it can gate
+    # every deploy rather than being something to remember to run.
+    if [ ! -x "$PY" ] || ! $PY -c "import pytest" 2>/dev/null; then
+        echo "    (pytest not installed - skipping tests)"
+        return 0
+    fi
+    local out
+    if ! out=$($PY -m pytest tests/ -q 2>&1); then
+        echo "TESTS FAILED - not deploying:"
+        echo "$out" | tail -15 | sed 's/^/    /'
+        return 1
+    fi
+    echo "    $(echo "$out" | grep -E '^[0-9]+ passed' | tail -1)"
 }
 
 check_syntax() {
@@ -122,6 +139,7 @@ case "${1:-deploy}" in
     logs)   tail -f "$LOG" ;;
     deploy|restart|start)
         check_syntax || exit 1
+        [ "${SKIP_TESTS:-}" = "1" ] || check_tests || exit 1
         stop > /dev/null
         start || exit 1
         status ;;

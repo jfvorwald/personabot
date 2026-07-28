@@ -47,6 +47,9 @@ log = logging.getLogger("personabot")
 DISCORD_TOKEN = os.environ["DISCORD_TOKEN"]
 CHANNEL_ID = int(os.environ["CHANNEL_ID"])
 PERSONA_FILE = os.getenv("PERSONA_FILE", "persona.md")
+# How conversation works, kept apart from who Jaq is so the two can be
+# edited independently. Optional — absent file just means no block.
+PSYCHOLOGY_FILE = os.getenv("PSYCHOLOGY_FILE", "psychology.md")
 TIMEZONE = ZoneInfo(os.getenv("TIMEZONE", "UTC"))
 HISTORY_LIMIT = int(os.getenv("HISTORY_LIMIT", "30"))
 MODEL = os.getenv("MODEL", "claude-opus-5")
@@ -259,6 +262,25 @@ conversation where you never speak is not a conversation."""
 
 PASS_TOKEN = "<pass>"
 
+# A question aimed at you makes an answer conditionally relevant: silence
+# after one is conspicuous in a way ordinary silence is not — it reads as
+# dodging rather than as not talking.
+#
+# Wh-words open a question wherever they land early in the sentence. Auxiliaries
+# are trickier, because the same word opens a question or continues a statement
+# depending on word order: "is jaq around" inverts subject and verb, "jaq is
+# right" does not. Requiring the auxiliary to be followed by a subject-ish token
+# separates the two.
+WH_WORDS = {"what", "why", "how", "when", "where", "who", "which", "whose"}
+AUXILIARIES = {
+    "is", "are", "was", "were", "do", "does", "did", "can", "could",
+    "should", "would", "will", "have", "has", "had", "am",
+}
+QUESTION_SUBJECTS = {
+    "you", "u", "i", "we", "they", "it", "he", "she", "there", "that", "this",
+    "anyone", "anybody", "someone", "somebody", "jaq",
+}
+
 
 def load_post_times() -> list[dtime]:
     """Parse POST_TIMES ('09:00,13:15,19:30') into tz-aware time objects."""
@@ -273,6 +295,15 @@ def load_post_times() -> list[dtime]:
     if not times:
         raise ValueError("POST_TIMES is empty")
     return times
+
+
+def load_psychology() -> str:
+    """Conversation mechanics. Optional; missing file is not an error."""
+    path = os.path.join(os.path.dirname(os.path.abspath(__file__)), PSYCHOLOGY_FILE)
+    if not os.path.exists(path):
+        return ""
+    with open(path) as f:
+        return f.read().strip()
 
 
 def load_persona() -> str:
@@ -297,6 +328,7 @@ class PersonaBot(discord.Client):
         super().__init__(intents=intents)
 
         self.persona = persona
+        self.psychology = load_psychology()
         self.post_now = post_now
         self.live = live
         self.claude = anthropic.AsyncAnthropic()
@@ -629,6 +661,36 @@ class PersonaBot(discord.Client):
         names = {message.author.display_name.lower(), (message.author.name or "").lower()}
         return any(a in n for a in ALLIES for n in names if n)
 
+    def _direct_question(self, message: discord.Message) -> bool:
+        """Addressed to us, and shaped like a question."""
+        if not self._addressed_to_me(message):
+            return False
+        text = message.clean_content.strip().lower()
+        if not text:
+            return False
+        if text.endswith("?"):
+            return True
+
+        words = [w.strip("@,.!") for w in text.split()]
+        if not words:
+            return False
+        if set(words[:3]) & WH_WORDS:
+            return True
+        # Elliptical openers: "anyone know if..." is "does anyone know if...",
+        # and it is still a question the room expects an answer to.
+        if words[0] in ("anyone", "anybody", "someone", "somebody"):
+            return True
+
+        # Drop a leading address ("jaq can you look" -> "can you look") so the
+        # inversion test sees the actual clause.
+        if words[0] in ("jaq", "hey", "yo", "oi") and len(words) > 1:
+            words = words[1:]
+        return (
+            len(words) > 1
+            and words[0] in AUXILIARIES
+            and words[1] in QUESTION_SUBJECTS
+        )
+
     def _addressed_to_me(self, message: discord.Message) -> bool:
         if self._mentioned_me(message):
             return True
@@ -711,6 +773,19 @@ class PersonaBot(discord.Client):
         elif self._is_ally(message):
             # Making a friend wait four messages to be acknowledged is the one
             # thing hanging back must never do.
+            chance = await self._reply_chance(
+                message, counterpart, mine, others_since_me
+            )
+            if random.random() > chance:
+                log.info("Not engaging with this one")
+                self._react_later(message)
+                return False
+        elif self._direct_question(message):
+            # Adjacency pairs: a question aimed at us makes an answer
+            # conditionally relevant, and a missing second part is conspicuous.
+            # Hanging back through one doesn't read as staying quiet, it reads
+            # as dodging — so questions skip the wait and roll immediately.
+            log.info("Direct question; not hanging back")
             chance = await self._reply_chance(
                 message, counterpart, mine, others_since_me
             )
@@ -946,7 +1021,10 @@ class PersonaBot(discord.Client):
         speakers: set[int] | None = None,
     ) -> str:
         framing = FRAMING + (SILENCE_OPTION if may_stay_silent else "")
-        system = f"{self.persona}\n\n---\n\n{framing}"
+        system = self.persona
+        if self.psychology:
+            system = f"{system}\n\n---\n\n{self.psychology}"
+        system = f"{system}\n\n---\n\n{framing}"
         if BRAIN_ENABLED:
             try:
                 notes = brain.load_for(speakers or set())
