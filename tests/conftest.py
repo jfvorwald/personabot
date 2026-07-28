@@ -17,7 +17,7 @@ import pytest
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
-sys.path.insert(0, ROOT)
+sys.path.insert(0, os.path.join(ROOT, "src"))
 
 # Must precede `import bot`. dotenv's load_dotenv() will not overwrite a
 # variable that is already set, so these also shield the suite from the real

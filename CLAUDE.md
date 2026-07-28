@@ -7,26 +7,33 @@ to a second persona bot run by a friend. Python, `discord.py` + `anthropic`.
 No framework, no database, no build step.
 
 **The design goal is that it reads as a person rather than a request handler.**
-Almost every mechanism in `bot.py` exists to serve that: it declines most
+Almost every mechanism in `src/bot.py` exists to serve that: it declines most
 messages, hangs back before joining a conversation someone else started, waits
 out bursts, types at human speed, and reacts instead of replying. When changing
 behaviour, the question to ask is whether it becomes more or less
 person-shaped - not whether it's faster or answers more.
 
-- `bot.py` - the Discord client and the orchestration. Three modes: `--now`,
-  `--live`, scheduled (no flag).
-- `config.py` - every setting, read from the environment in one place.
-- `decide.py` - whether to speak and whether to wait, as pure functions.
+```
+src/       the bot's modules; run as `.venv/bin/python src/bot.py`
+tools/     standalone operator scripts, never imported by the bot
+tests/     the suite the deploy gate runs
+brain/     profile data (contents gitignored)
+```
+
+- `src/bot.py` - the Discord client and the orchestration. Three modes:
+  `--now`, `--live`, scheduled (no flag).
+- `src/config.py` - every setting, read from the environment in one place.
+- `src/decide.py` - whether to speak and whether to wait, as pure functions.
   **Imports no Discord, on purpose** - that is what makes it testable.
-- `react.py` - reaction budget and emote selection.
-- `prompts.py` - every fixed string the model is shown.
-- `persona.py` - loads `persona.md`, `psychology.md`, and the post schedule.
-- `brain.py` - what Jaq knows about the people here. Module + CLI.
-- `changelog.py` - reads the git log for patch notes.
-- `persona.md` - who Jaq is, in the system prompt verbatim. Untracked.
-- `psychology.md` - how conversation works. A separate block on purpose, so the
-  two stay independently editable.
-- `restart.sh` - deploy / status / stop / logs for the live process.
+- `src/react.py` - reaction budget and emote selection.
+- `src/prompts.py` - every fixed string the model is shown.
+- `src/persona.py` - loads `persona.md`, `psychology.md`, and the post schedule.
+- `src/brain.py` - what Jaq knows about the people here. Module + CLI.
+- `src/changelog.py` - reads the git log for patch notes.
+- `src/paths.py` - where the repo root is. The only place that is written down.
+- `tools/doctor.py`, `tools/setup_env.py` - run by a human, never imported.
+- `persona.md` / `psychology.md` - content, at the root where you edit them.
+  `persona.md` is untracked.
 
 Read `README.md` for the modes and the full config surface,
 `brain/README.md` for the brain's architecture and the hand-written
@@ -56,8 +63,7 @@ fails, waits for the old process to actually exit, and prints the live config.
 It is the verification, not just the deploy.
 
 The one exception: `brain/people/*.md` and `brain/_index.json` are re-read from
-disk on every reply and take effect immediately. Everything else - `bot.py`,
-`brain.py`, `persona.md`, `psychology.md`, `.env` - needs the restart.
+disk on every reply and take effect immediately. Everything else - anything in `src/`, `persona.md`, `psychology.md`, `.env` - needs the restart.
 
 Restarting is cheap and safe by design: the day's reply and reaction spend is
 persisted to `.bot_state.json` and restored on connect, so deploying does not
@@ -76,7 +82,7 @@ The suite is hermetic - no network, and it deliberately ignores the real `.env`
 so it asserts against documented defaults rather than this machine's config.
 
 **Verify against Discord, not just against the parser.**
-`.venv/bin/python doctor.py` checks each layer in order - env vars, Anthropic
+`.venv/bin/python tools/doctor.py` checks each layer in order - env vars, Anthropic
 round-trip, Discord login, channel access - and stops at the first failure.
 `bot.py --now` posts one real message and exits.
 
@@ -96,7 +102,7 @@ Not in code, comments, docs, commit messages, prompts, or replies. Use a hyphen.
 This is absolute.
 
 It matters twice over here: it is Jack's standing preference for everything
-written, and an em dash in `persona.md`, `psychology.md`, or `prompts.py` is
+written, and an em dash in `persona.md`, `psychology.md`, or `src/prompts.py` is
 worse than a style violation - those files are the model's context, so every
 one in them teaches the bot the habit, and an em dash in a Discord message is
 the most recognisable machine tell there is.

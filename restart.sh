@@ -14,11 +14,13 @@ cd "$(dirname "$(realpath "$0")")"
 PY=.venv/bin/python
 PIDFILE=.bot.pid
 LOG=live.log
-PATTERN='\.venv/bin/python bot\.py --live'
+PATTERN='\.venv/bin/python src/bot\.py --live'
 # brain.py is imported at startup, so a change to it needs a restart.
 # brain/people/*.md are deliberately NOT here: those are re-read from
 # disk on every reply, so editing a profile takes effect immediately.
-WATCHED=(bot.py brain.py persona.md .env)
+WATCHED=(src/bot.py src/brain.py src/decide.py src/react.py src/config.py
+         src/prompts.py src/persona.py src/changelog.py persona.md
+         psychology.md .env)
 
 # --- helpers ---------------------------------------------------------------
 
@@ -55,7 +57,7 @@ check_tests() {
 }
 
 check_syntax() {
-    if ! $PY -c "import ast, sys; ast.parse(open('bot.py').read())" 2>/tmp/pb_syntax; then
+    if ! $PY -c "import ast,glob,sys; [ast.parse(open(f).read()) for f in glob.glob('src/*.py')]" 2>/tmp/pb_syntax; then
         echo "SYNTAX ERROR in bot.py - not deploying:"
         sed 's/^/    /' /tmp/pb_syntax
         return 1
@@ -101,7 +103,7 @@ start() {
     # record of everything the bot did before this deploy.
     [ -f "$LOG" ] && [ "$(stat -c %s "$LOG")" -gt 5000000 ] && mv "$LOG" "$LOG.1"
     printf '\n===== started %s =====\n' "$(date '+%Y-%m-%d %H:%M:%S')" >> "$LOG"
-    setsid nohup $PY bot.py --live >> "$LOG" 2>&1 < /dev/null &
+    setsid nohup $PY src/bot.py --live >> "$LOG" 2>&1 < /dev/null &
     local pid=$!
     echo "$pid" > "$PIDFILE"
     for _ in $(seq 60); do

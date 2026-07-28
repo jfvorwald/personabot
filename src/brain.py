@@ -33,9 +33,11 @@ from collections import defaultdict
 
 from dotenv import load_dotenv
 
-load_dotenv(os.path.join(os.path.dirname(os.path.abspath(__file__)), ".env"))
+from paths import ROOT, at_root
 
-HERE = os.path.dirname(os.path.abspath(__file__))
+load_dotenv(at_root(".env"))
+
+HERE = ROOT
 BRAIN_DIR = os.path.join(HERE, os.getenv("BRAIN_DIR", "brain"))
 PEOPLE_DIR = os.path.join(BRAIN_DIR, "people")
 INDEX_PATH = os.path.join(BRAIN_DIR, "_index.json")

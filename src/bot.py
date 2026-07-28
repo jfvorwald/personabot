@@ -39,6 +39,7 @@ import changelog
 import decide
 import react
 from decide import fold
+from paths import ROOT, at_root
 from persona import load_persona, load_post_times, load_psychology
 
 
@@ -208,7 +209,7 @@ class PersonaBot(discord.Client):
         )
 
     def _state_path(self) -> str:
-        return os.path.join(os.path.dirname(os.path.abspath(__file__)), STATE_FILE)
+        return at_root(STATE_FILE)
 
     def _save_day(self) -> None:
         """Persist today's spend. Cheap, and it runs only when we post."""
@@ -468,9 +469,8 @@ class PersonaBot(discord.Client):
 
     def _patch_notes_instruction(self) -> str:
         """Real commits if there are any, otherwise the brush-off."""
-        here = os.path.dirname(os.path.abspath(__file__))
         changes = changelog.summarise(
-            changelog.recent_commits(PATCH_NOTES_HOURS, cwd=here)
+            changelog.recent_commits(PATCH_NOTES_HOURS, cwd=ROOT)
         )
         if not changes:
             log.info("Patch notes requested; nothing shipped in %dh", PATCH_NOTES_HOURS)

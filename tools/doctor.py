@@ -21,7 +21,10 @@ import sys
 
 from dotenv import load_dotenv
 
-load_dotenv()
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, os.path.join(ROOT, "src"))
+
+load_dotenv(os.path.join(ROOT, ".env"))
 
 SEND = "--send" in sys.argv
 
@@ -183,7 +186,7 @@ async def main() -> int:
         return 1
     if not await check_3_and_4_discord():
         return 1
-    print("\nAll checks passed. Run:  .venv/bin/python bot.py --now")
+    print("\nAll checks passed. Run:  .venv/bin/python src/bot.py --now")
     return 0
 
 

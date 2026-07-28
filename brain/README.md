@@ -72,10 +72,10 @@ preserves it byte for byte.
 ## Using it
 
 ```bash
-.venv/bin/python brain.py scan          # update from CHANNEL_ID
-.venv/bin/python brain.py scan --channel 381547894525919262
-.venv/bin/python brain.py scan --force  # redo everyone, ignore watermarks
-.venv/bin/python brain.py list          # who's known, who's only been seen
+.venv/bin/python src/brain.py scan          # update from CHANNEL_ID
+.venv/bin/python src/brain.py scan --channel 381547894525919262
+.venv/bin/python src/brain.py scan --force  # redo everyone, ignore watermarks
+.venv/bin/python src/brain.py list          # who's known, who's only been seen
 ```
 
 A scan skips anyone below `BRAIN_MIN_MESSAGES`, because a confident profile

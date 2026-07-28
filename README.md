@@ -23,9 +23,9 @@ that, and what stops it doing it forever.
 ## Three modes
 
 ```bash
-.venv/bin/python bot.py --now     # post once, exit
-.venv/bin/python bot.py           # scheduled: post only at POST_TIMES
-.venv/bin/python bot.py --live    # stay connected, converse in real time
+.venv/bin/python src/bot.py --now     # post once, exit
+.venv/bin/python src/bot.py           # scheduled: post only at POST_TIMES
+.venv/bin/python src/bot.py --live    # stay connected, converse in real time
 ```
 
 **`--now`** is the smoke test. Connects, posts one message, exits.
@@ -184,7 +184,7 @@ opinion they'll defend - two agreeable personas produce very boring logs.
 **6. Configure**
 
 ```bash
-.venv/bin/python setup_env.py
+.venv/bin/python tools/setup_env.py
 ```
 
 Prompts for each value and writes `.env`. Secrets are read with hidden input,
@@ -202,7 +202,7 @@ Set `TIMEZONE`, and:
 **7. Check the setup**
 
 ```bash
-.venv/bin/python doctor.py
+.venv/bin/python tools/doctor.py
 ```
 
 Checks each layer in order - env vars, Discord login, channel access,
@@ -212,7 +212,7 @@ nothing. Add `--send` to also post a throwaway test message.
 **8. Smoke-test for real**
 
 ```bash
-.venv/bin/python bot.py --now
+.venv/bin/python src/bot.py --now
 ```
 
 Posts one in-character message immediately and exits. Check the channel. If it
@@ -221,8 +221,8 @@ looks right, you're done configuring.
 **9. Run it**
 
 ```bash
-.venv/bin/python bot.py          # scheduled
-.venv/bin/python bot.py --live   # live
+.venv/bin/python src/bot.py          # scheduled
+.venv/bin/python src/bot.py --live   # live
 ```
 
 It has to stay running - see below.
@@ -234,10 +234,10 @@ It has to stay running - see below.
 The process must be alive at the scheduled times. Pick one:
 
 **`restart.sh` (live mode, no root):** wraps the whole deploy loop. It
-syntax-checks `bot.py` before deploying, so a typo can't take the bot down;
+syntax-checks everything in `src/` before deploying, so a typo can't take the bot down;
 kills the old process and *waits for it to actually exit* before starting a new
 one, since two instances means every message gets answered twice; and tracks
-whether `bot.py`, `persona.md`, or `.env` have been edited since the running
+whether anything in `src/`, `persona.md`, `psychology.md`, or `.env` has been edited since the running
 process started.
 
 ```bash
@@ -259,7 +259,7 @@ After=network-online.target
 
 [Service]
 WorkingDirectory=%h/jaq
-ExecStart=%h/jaq/.venv/bin/python bot.py
+ExecStart=%h/jaq/.venv/bin/python src/bot.py
 Restart=always
 RestartSec=30
 
@@ -284,7 +284,7 @@ Dies on reboot.
 alive, skip `POST_TIMES` and let cron invoke `bot.py --now`:
 
 ```
-0 9,13,19 * * * cd ~/jaq && .venv/bin/python bot.py --now >> bot.log 2>&1
+0 9,13,19 * * * cd ~/jaq && .venv/bin/python src/bot.py --now >> bot.log 2>&1
 ```
 
 Each run connects, posts once, exits. Same result, no daemon. Not an option for

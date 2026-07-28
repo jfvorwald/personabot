@@ -13,6 +13,7 @@ import sys
 from datetime import time as dtime
 
 from config import PERSONA_FILE, PSYCHOLOGY_FILE, TIMEZONE
+from paths import at_root
 
 def load_post_times() -> list[dtime]:
     """Parse POST_TIMES ('09:00,13:15,19:30') into tz-aware time objects."""
@@ -30,7 +31,7 @@ def load_post_times() -> list[dtime]:
 
 def load_psychology() -> str:
     """Conversation mechanics. Optional; missing file is not an error."""
-    path = os.path.join(os.path.dirname(os.path.abspath(__file__)), PSYCHOLOGY_FILE)
+    path = at_root(PSYCHOLOGY_FILE)
     if not os.path.exists(path):
         return ""
     with open(path) as f:

@@ -13,7 +13,9 @@ import re
 import sys
 from getpass import getpass
 
-ENV_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".env")
+ENV_PATH = os.path.join(
+    os.path.dirname(os.path.dirname(os.path.abspath(__file__))), ".env"
+)
 
 FIELDS = [
     ("DISCORD_TOKEN", "Discord bot token (Bot tab -> Reset Token)", True),

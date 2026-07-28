@@ -13,7 +13,9 @@ from zoneinfo import ZoneInfo
 
 from dotenv import load_dotenv
 
-load_dotenv()
+from paths import at_root
+
+load_dotenv(at_root(".env"))
 
 DISCORD_TOKEN = os.environ["DISCORD_TOKEN"]
 CHANNEL_ID = int(os.environ["CHANNEL_ID"])

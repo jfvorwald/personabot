@@ -24,7 +24,7 @@ EM_DASH = "\u2014"
 
 # Files whose contents are handed to the model verbatim. A stray em dash in one
 # of these does not just look wrong, it demonstrates the habit.
-PROMPT_FILES = ["persona.md", "psychology.md", "prompts.py"]
+PROMPT_FILES = ["persona.md", "psychology.md", "src/prompts.py"]
 
 
 def _paths(patterns):
@@ -48,7 +48,8 @@ def test_no_em_dash_in_anything_the_model_reads(name):
 
 @pytest.mark.parametrize(
     "path",
-    _paths(["*.py", "tests/*.py", "*.md", "brain/*.md", "*.sh"]),
+    _paths(["src/*.py", "tools/*.py", "tests/*.py", "*.py",
+            "*.md", "brain/*.md", "*.sh"]),
     ids=lambda p: os.path.relpath(p, ROOT),
 )
 def test_no_em_dash_in_the_repo(path):
