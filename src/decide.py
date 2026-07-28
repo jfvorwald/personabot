@@ -140,3 +140,59 @@ def is_update_request(text: str) -> bool:
         return False
     # A bare mention of the word is not a request; asking is.
     return lowered.endswith("?") or bool(words & {"any", "got", "gimme", "give"})
+
+
+# Asking for a picture. Narrow on purpose: "chart" and "map" are common words in
+# a gaming channel, so a bare mention is not a request for one.
+ART_VERBS = {"draw", "sketch", "render", "illustrate", "diagram", "visualise",
+             "visualize", "graph", "chart", "plot"}
+ART_NOUNS = {"ascii", "art", "picture", "drawing", "diagram", "chart", "graph"}
+
+
+def is_art_request(text: str) -> bool:
+    """Did someone actually ask for a picture?
+
+    Requires the verb in imperative position - nothing question-like or modal
+    in front of it. "draw zack" is a request; "what chart are you using" and
+    "can someone chart a course" are not, and both contain the same verb.
+    """
+    lowered = text.strip().lower()
+    if not lowered:
+        return False
+    words = [w.strip("?!.,:;\"'") for w in lowered.split()]
+    if not words:
+        return False
+    if "ascii" in words:
+        return True
+
+    # A determiner in front turns the same word into a noun: "draw" is a
+    # request, "the draw" is not.
+    blockers = WH_WORDS | AUXILIARIES | {
+        "someone", "anyone", "if", "that", "the", "a", "an", "this",
+        "these", "those", "my", "your", "his", "her", "their", "our",
+    }
+    for i, word in enumerate(words):
+        if word in ART_VERBS:
+            return not (set(words[:i]) & blockers)
+        if word in {"make", "give", "show", "gimme"}:
+            if set(words[:i]) & blockers:
+                return False
+            return bool(set(words[i + 1:]) & ART_NOUNS)
+    return False
+
+
+def is_trivial_question(text: str, max_words: int) -> bool:
+    """Short enough that a diagram in reply is absurd.
+
+    The unprompted art bit only works when the effort is wildly out of
+    proportion to what was asked. A long question does not qualify - answering
+    it thoroughly is just answering it.
+    """
+    stripped = text.strip()
+    if not stripped:
+        return False
+    if len(stripped.split()) > max_words:
+        return False
+    return stripped.endswith("?") or bool(
+        {w.strip("?!.,") for w in stripped.lower().split()} & (WH_WORDS | AUXILIARIES)
+    )

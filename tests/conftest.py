@@ -80,6 +80,7 @@ def persona_bot(bot_module):
     b = Testable.__new__(Testable)
     b._reply_day = __import__('datetime').date(2026, 7, 28)
     b._reactions_today = 0
+    b._art_today = 0
     b._replies_today = 0
     b._daily_budget = 100
     b._brushed_off_today = False

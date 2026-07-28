@@ -81,6 +81,16 @@ BRAIN_ENABLED = os.getenv("BRAIN_ENABLED", "true").lower() == "true"
 # not this quarter.
 PATCH_NOTES_HOURS = int(os.getenv("PATCH_NOTES_HOURS", "24"))
 
+# ASCII art. Always available on request; unprompted it is a commitment bit -
+# answering a two-word question with a full diagram, where the effort being
+# wildly out of proportion is the entire joke. Rationed hard, because the
+# second time in a day it stops being disproportionate and becomes a tic.
+ART_ENABLED = os.getenv("ART_ENABLED", "true").lower() == "true"
+ART_DAILY_MAX = int(os.getenv("ART_DAILY_MAX", "1"))
+ART_OVERKILL_CHANCE = float(os.getenv("ART_OVERKILL_CHANCE", "0.12"))
+# A question long enough to be interesting does not need a diagram.
+ART_TRIVIAL_MAX_WORDS = int(os.getenv("ART_TRIVIAL_MAX_WORDS", "8"))
+
 # Where the day's spend is kept so it survives a restart. Without this the
 # budget only ever bounds a single process: deploying re-draws it and zeroes
 # the counters, so a day with ten deploys has no effective cap at all.

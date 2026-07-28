@@ -86,6 +86,14 @@ so it asserts against documented defaults rather than this machine's config.
 round-trip, Discord login, channel access - and stops at the first failure.
 `bot.py --now` posts one real message and exits.
 
+## ASCII art only renders inside a code fence
+
+Discord uses a proportional font everywhere else, so unfenced art collapses.
+Emoji inside the fence are double-width and shear every line beneath them.
+Testing showed the model handles row-based forms well - bar charts,
+flowcharts, decision tables - and reliably misses by a character on anything
+needing closed borders, so `src/prompts.py` steers toward the former.
+
 ## Commit messages are read out loud
 
 When someone in the channel asks for an update, the bot answers with patch

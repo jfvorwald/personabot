@@ -52,6 +52,8 @@ log = logging.getLogger("personabot")
 from config import *  # noqa: F403  (every setting, by name)
 
 from prompts import (
+    ART_OVERKILL_INSTRUCTION,
+    ASCII_ART_PROMPT,
     BRUSH_OFF_PROMPT,
     NO_UPDATES_PROMPT,
     PATCH_NOTES_PROMPT,
@@ -98,6 +100,7 @@ class PersonaBot(discord.Client):
         self._hang_back_target = 0
         self._messages_waited = 0
         self._reactions_today = 0
+        self._art_today = 0
         self._recent_reactions: deque = deque(maxlen=REACT_RECENT_MEMORY)
         self._pending: set = set()
         self._reset_hang_back()
@@ -220,6 +223,7 @@ class PersonaBot(discord.Client):
                         "day": str(self._reply_day),
                         "replies": self._replies_today,
                         "reactions": self._reactions_today,
+                        "art": self._art_today,
                         "budget": self._daily_budget,
                         "brushed_off": self._brushed_off_today,
                     },
@@ -241,6 +245,7 @@ class PersonaBot(discord.Client):
         self._reply_day = today
         self._replies_today = state.get("replies", 0)
         self._reactions_today = state.get("reactions", 0)
+        self._art_today = state.get("art", 0)
         self._daily_budget = state.get("budget")
         self._brushed_off_today = state.get("brushed_off", False)
         log.info(
@@ -257,6 +262,7 @@ class PersonaBot(discord.Client):
         self._reply_day = today
         self._replies_today = 0
         self._reactions_today = 0
+        self._art_today = 0
         self._brushed_off_today = False
         if LIVE_UNLIMITED:
             self._daily_budget = None
@@ -467,6 +473,32 @@ class PersonaBot(discord.Client):
             message.clean_content
         )
 
+    def _art_instruction(self, message: discord.Message) -> str | None:
+        """ASCII art, if this is the moment for it.
+
+        Always on request. Unprompted it is rationed hard and only fires on a
+        question trivial enough that a diagram in reply is absurd - the effort
+        being out of all proportion is the whole joke, and it stops being
+        disproportionate the second time in a day.
+        """
+        if not ART_ENABLED:
+            return None
+        text = message.clean_content
+
+        if decide.is_art_request(text):
+            log.info("ASCII art requested")
+            return ASCII_ART_PROMPT.format(ask=f"They asked: {text.strip()}")
+
+        if ART_DAILY_MAX and self._art_today >= ART_DAILY_MAX:
+            return None
+        if not decide.is_trivial_question(text, ART_TRIVIAL_MAX_WORDS):
+            return None
+        if random.random() > ART_OVERKILL_CHANCE:
+            return None
+        log.info("Answering a trivial question with a diagram (%d/%d today)",
+                 self._art_today + 1, ART_DAILY_MAX)
+        return ASCII_ART_PROMPT.format(ask=ART_OVERKILL_INSTRUCTION)
+
     def _patch_notes_instruction(self) -> str:
         """Real commits if there are any, otherwise the brush-off."""
         changes = changelog.summarise(
@@ -590,7 +622,11 @@ class PersonaBot(discord.Client):
                 log.info("Not engaging with this one")
                 self._react_later(message)
                 return False
-        elif self._direct_question(message) or self._wants_patch_notes(message):
+        elif (
+            self._direct_question(message)
+            or self._wants_patch_notes(message)
+            or (ART_ENABLED and decide.is_art_request(message.clean_content))
+        ):
             # Adjacency pairs: a question aimed at us makes an answer
             # conditionally relevant, and a missing second part is conspicuous.
             # Hanging back through one doesn't read as staying quiet, it reads
@@ -635,12 +671,19 @@ class PersonaBot(discord.Client):
 
         channel = message.channel
         transcript, speakers = await self.read_transcript(channel)
+        art = self._art_instruction(message)
         if self._wants_patch_notes(message):
             reply = await self.generate(
                 transcript,
                 instruction=self._patch_notes_instruction(),
                 speakers=speakers,
             )
+        elif art:
+            reply = await self.generate(
+                transcript, instruction=art, speakers=speakers
+            )
+            if reply:
+                self._art_today += 1
         else:
             reply = await self.generate(
                 transcript, may_stay_silent=True, speakers=speakers

@@ -203,6 +203,14 @@ Do it as cleanup, not as a priority. Relevant numbers on `claude-sonnet-5`:
 1024-token minimum cacheable prefix (the system prompt is ~5-6k, so it
 qualifies), cache reads ~0.1x, writes 1.25x at the 5-minute TTL.
 
+## 14. ASCII art: the forms that don't work yet
+
+Shipped for row-based forms (charts, flowcharts, tables). Figures, faces and
+anything with a closed border still come out a character misaligned, which
+reads as broken rather than as a drawing. If that is worth fixing, the route is
+a small curated library of hand-checked pieces the model picks from rather than
+generates - fresh generation is what makes alignment unreliable.
+
 ## 11. Link and media behavior
 
 A large share of how this group actually communicates is links, Tenor GIFs, and

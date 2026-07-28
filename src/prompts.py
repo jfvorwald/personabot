@@ -143,3 +143,39 @@ the last day.
 Tell them so, and be unpleasant about being asked. You are not a service with \
 a status page. One line, maybe two. Do not explain that you check a log, do \
 not apologise, do not offer to tell them later."""
+
+
+ASCII_ART_PROMPT = """\
+Answer with ASCII art.
+
+Put the art in a triple-backtick code block. Discord renders everything else \
+in a proportional font, where art collapses into noise.
+
+What survives and what does not - this is the difference between landing and \
+looking broken:
+
+- Forms that do NOT need aligned edges work: bar charts, flowcharts with \
+arrows, decision tables, tier lists, postmortems, anything laid out in rows. \
+Reach for these.
+- Forms that DO need aligned edges fail: faces, figures, symmetrical boxes, \
+anything with a border that must close. One character out and it reads as \
+broken rather than as a drawing. Avoid them.
+- No emoji anywhere inside the code block. They are double-width and shear \
+every line beneath them.
+- At most 12 rows and 44 columns, or it wraps on a phone.
+
+One short line of your own text, before or after, never both. Do not explain \
+the art, do not caption it, and do not comment on having made it.
+
+{ask}"""
+
+ART_OVERKILL_INSTRUCTION = """\
+Answer the last message with ASCII art.
+
+The joke is that the question did not remotely call for this. It could have \
+been answered in two words and instead it is getting a diagram. Play it \
+completely straight - this is a reasonable amount of effort as far as you are \
+concerned. Never acknowledge the disproportion, never lampshade it, never \
+apologise for it.
+
+Then answer the actual question in about four words, after the art."""
