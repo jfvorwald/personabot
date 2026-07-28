@@ -41,7 +41,13 @@ def test_counterpart_is_lowest(persona_bot, bot_module, ben_bot):
 
 
 def test_name_in_text_counts_as_addressed(persona_bot, bot_module, stranger):
-    c = chance(persona_bot, FakeMessage(stranger, "anyone seen jaq lately"))
+    """Named without an @ still counts. Uses the bot's own alias, not "jaq" —
+    that name belongs to a human in this channel."""
+    from test_identity import FakeChannel
+
+    m = FakeMessage(stranger, "anyone seen agentix lately")
+    m.channel = FakeChannel()
+    c = asyncio.run(persona_bot._reply_chance(m, False, 0, 3))
     assert c == pytest.approx(bot_module.REPLY_CHANCE_ADDRESSED)
 
 

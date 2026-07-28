@@ -25,6 +25,7 @@ import logging
 import os
 import random
 import sys
+import unicodedata
 from collections import deque
 from datetime import time as dtime
 from zoneinfo import ZoneInfo
@@ -104,6 +105,15 @@ JOIN_WINDOW_MESSAGES = int(os.getenv("JOIN_WINDOW_MESSAGES", "8"))
 # the next scan has a to-do list. See brain/README.md.
 BRAIN_ENABLED = os.getenv("BRAIN_ENABLED", "true").lower() == "true"
 
+# Names the bot answers to, beyond a real @mention. Deliberately does NOT
+# include a bare "jaq": the persona is called Jaq and so is its creator, so a
+# bare "jaq" in this channel is ambiguous and usually means the human.
+BOT_ALIASES = [
+    n.strip().lower()
+    for n in os.getenv("BOT_ALIASES", "agentic jaq,agentix").split(",")
+    if n.strip()
+]
+
 # Reactions. People react far more often than they reply, so this fires on
 # messages we decided NOT to answer — it costs a fraction of a reply and buys
 # back the presence that staying silent gives up. Spends its own budget so it
@@ -125,6 +135,9 @@ REACT_RECENT_MEMORY = int(os.getenv("REACT_RECENT_MEMORY", "6"))
 # back, the end-of-day sign-off — exists to stop it pestering a room. None of
 # that should ever read as blanking a friend, so allies bypass it.
 ALLIES = [n.strip().lower() for n in os.getenv("ALLIES", "").split(",") if n.strip()]
+# Discord user ids of allies. Ids never change; display names do, and a name
+# that stops matching silently downgrades a friend to a stranger.
+ALLY_IDS = {i.strip() for i in os.getenv("ALLY_IDS", "").split(",") if i.strip()}
 REPLY_CHANCE_ALLY = float(os.getenv("REPLY_CHANCE_ALLY", "0.9"))
 
 # --- Making it behave like a person in a room, not a request handler --------
@@ -295,6 +308,17 @@ def load_post_times() -> list[dtime]:
     if not times:
         raise ValueError("POST_TIMES is empty")
     return times
+
+
+def fold(text: str) -> str:
+    """Lowercase and fold decorative unicode down to plain characters.
+
+    Discord nicknames are routinely written in fullwidth or styled unicode —
+    this bot's own is "\uff21\uff47\uff45\uff4e\uff54\uff49\uff43 \uff2a\uff41\uff51". Those code points are not the
+    ASCII letters they look like, so any substring match against them fails
+    silently. NFKC maps them back.
+    """
+    return unicodedata.normalize("NFKC", text).lower()
 
 
 def load_psychology() -> str:
@@ -656,10 +680,19 @@ class PersonaBot(discord.Client):
         return self.user in message.mentions
 
     def _is_ally(self, message: discord.Message) -> bool:
-        if not ALLIES or message.author.bot:
+        if message.author.bot:
             return False
-        names = {message.author.display_name.lower(), (message.author.name or "").lower()}
-        return any(a in n for a in ALLIES for n in names if n)
+        # Id first: it survives every rename. Names remain as a convenience for
+        # anyone whose id isn't configured yet.
+        if str(message.author.id) in ALLY_IDS:
+            return True
+        if not ALLIES:
+            return False
+        names = {
+            fold(message.author.display_name),
+            fold(message.author.name or ""),
+        }
+        return any(fold(a) in n for a in ALLIES for n in names if n)
 
     def _direct_question(self, message: discord.Message) -> bool:
         """Addressed to us, and shaped like a question."""
@@ -681,21 +714,43 @@ class PersonaBot(discord.Client):
         if words[0] in ("anyone", "anybody", "someone", "somebody"):
             return True
 
-        # Drop a leading address ("jaq can you look" -> "can you look") so the
-        # inversion test sees the actual clause.
-        if words[0] in ("jaq", "hey", "yo", "oi") and len(words) > 1:
+        # Drop a leading address ("agentix can you look" -> "can you look") so
+        # the inversion test sees the actual clause. Derived from the names we
+        # actually answer to rather than hardcoded, or it breaks on a rename.
+        mine = {
+            w
+            for name in self._my_names(message)
+            for w in name.split()
+            if w.isalnum()
+        }
+        if words[0] in mine | {"hey", "yo", "oi"} and len(words) > 1:
             words = words[1:]
         return (
             len(words) > 1
             and words[0] in AUXILIARIES
-            and words[1] in QUESTION_SUBJECTS
+            and words[1] in QUESTION_SUBJECTS | mine
         )
+
+    def _my_names(self, message: discord.Message) -> set[str]:
+        """Every name this bot answers to in this channel.
+
+        self.user.display_name is the global name; inside a guild the bot is
+        usually addressed by its per-guild nickname, which is a different
+        string entirely.
+        """
+        names = {fold(self.user.name or ""), fold(self.user.display_name)}
+        guild = getattr(message.channel, "guild", None)
+        me = getattr(guild, "me", None)
+        if me is not None:
+            names.add(fold(me.display_name))
+        names |= {fold(a) for a in BOT_ALIASES}
+        return {n for n in names if n}
 
     def _addressed_to_me(self, message: discord.Message) -> bool:
         if self._mentioned_me(message):
             return True
-        text = message.clean_content.lower()
-        return "jaq" in text or f"@{self.user.display_name.lower()}" in text
+        text = fold(message.clean_content)
+        return any(name in text for name in self._my_names(message))
 
     async def _recent_mix(self, message) -> tuple[int, int]:
         """How much of the recent window is ours, and what's come since."""

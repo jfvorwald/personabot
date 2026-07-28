@@ -72,7 +72,7 @@ def persona_bot(bot_module):
     discord.Client.user is a read-only property, so it has to be shadowed on a
     subclass rather than assigned on the instance.
     """
-    me = types.SimpleNamespace(id=999, display_name="agentix")
+    me = types.SimpleNamespace(id=999, display_name="agentix", name="agentix")
 
     class Testable(bot_module.PersonaBot):
         user = me

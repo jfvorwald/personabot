@@ -13,6 +13,7 @@ import asyncio
 import pytest
 
 from conftest import FakeAuthor, FakeMessage
+from test_identity import FakeChannel
 
 
 # --- question detection -----------------------------------------------------
@@ -21,30 +22,34 @@ from conftest import FakeAuthor, FakeMessage
 @pytest.mark.parametrize(
     "text",
     [
-        "jaq what do you think?",
-        "jaq, thoughts?",
-        "what does jaq reckon",
-        "is jaq around",
-        "can jaq confirm this",
-        "anyone know if jaq tried it",
-        "how would jaq do it",
-        "jaq you seen this?",
+        "agentic jaq what do you think?",
+        "agentic jaq, thoughts?",
+        "what does agentix reckon",
+        "is agentix around",
+        "can agentix confirm this",
+        "anyone know if agentix tried it",
+        "how would agentix do it",
+        "agentic jaq you seen this?",
     ],
 )
 def test_questions_aimed_at_jaq_are_detected(persona_bot, stranger, text):
-    assert persona_bot._direct_question(FakeMessage(stranger, text)) is True
+    m = FakeMessage(stranger, text)
+    m.channel = FakeChannel()
+    assert persona_bot._direct_question(m) is True
 
 
 @pytest.mark.parametrize(
     "text",
     [
-        "jaq is right about that",
-        "jaq already said this",
-        "told jaq earlier",
+        "agentix is right about that",
+        "agentix already said this",
+        "told agentix earlier",
     ],
 )
 def test_statements_about_jaq_are_not_questions(persona_bot, stranger, text):
-    assert persona_bot._direct_question(FakeMessage(stranger, text)) is False
+    m = FakeMessage(stranger, text)
+    m.channel = FakeChannel()
+    assert persona_bot._direct_question(m) is False
 
 
 def test_question_not_addressed_to_us_is_not_ours(persona_bot, stranger):
@@ -63,7 +68,7 @@ def test_empty_message_is_not_a_question(persona_bot, stranger):
 
 
 def test_leading_at_sign_is_stripped(persona_bot, stranger):
-    assert persona_bot._direct_question(FakeMessage(stranger, "@jaq can you look")) is True
+    assert persona_bot._direct_question(FakeMessage(stranger, "@agentix can you look")) is True
 
 
 # --- the routing fix --------------------------------------------------------
@@ -133,7 +138,7 @@ def test_direct_question_skips_the_hang_back(persona_bot, stranger, never_posts)
     persona_bot._messages_waited = 0
 
     with pytest.raises(RuntimeError, match="reached the network"):
-        m = FakeMessage(stranger, "jaq what do you think?")
+        m = FakeMessage(stranger, "agentic jaq what do you think?")
         m.channel = _Channel()
         respond(persona_bot, m)
 
@@ -157,7 +162,7 @@ def test_statement_naming_jaq_still_hangs_back(persona_bot, stranger, never_post
     persona_bot._hang_back_target = 5
     persona_bot._messages_waited = 0
 
-    m = FakeMessage(stranger, "jaq is right")
+    m = FakeMessage(stranger, "agentix is right")
     m.channel = _Channel()
     assert respond(persona_bot, m) is False
     assert never_posts["hang_back"] == 1
