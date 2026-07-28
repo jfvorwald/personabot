@@ -1,8 +1,6 @@
-# jaq
+# personabot
 
-Personal projects. Currently one: `personabot/`.
-
-## What personabot is
+## What this is
 
 A Discord bot that plays a persona ("Jaq") in a private friend server, talking
 to a second persona bot run by a friend. Python, `discord.py` + `anthropic`.
@@ -20,9 +18,9 @@ person-shaped - not whether it's faster or answers more.
 - `persona.md` - who Jaq is, dropped into the system prompt verbatim. Untracked.
 - `restart.sh` - deploy / status / stop / logs for the live process.
 
-Read `personabot/README.md` for the modes and the full config surface,
-`personabot/brain/README.md` for the brain's architecture and the hand-written
-marker, and `personabot/FUTURE.md` for the ranked roadmap of what's next.
+Read `README.md` for the modes and the full config surface,
+`brain/README.md` for the brain's architecture and the hand-written
+marker, and `FUTURE.md` for the ranked roadmap of what's next.
 
 ## Working here
 
@@ -33,7 +31,7 @@ installed system-wide.
 code is the failure mode here:
 
 ```bash
-cd personabot && ./restart.sh
+./restart.sh
 ```
 
 It syntax-checks before deploying, waits for the old process to actually exit,
