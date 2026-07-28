@@ -175,6 +175,13 @@ def note_seen(user_id: int, display_name: str, handle: str = "") -> bool:
     return is_new
 
 
+def profile_count() -> int:
+    """How many people the brain actually has a written profile for."""
+    if not os.path.isdir(PEOPLE_DIR):
+        return 0
+    return len([f for f in os.listdir(PEOPLE_DIR) if f.endswith(".md")])
+
+
 def load_for(user_ids: set[int]) -> str:
     """Assemble the brain text for a reply: core profiles plus whoever's here."""
     index = load_index()

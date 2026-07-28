@@ -14,7 +14,10 @@ PY=.venv/bin/python
 PIDFILE=.bot.pid
 LOG=live.log
 PATTERN='\.venv/bin/python bot\.py --live'
-WATCHED=(bot.py persona.md .env)
+# brain.py is imported at startup, so a change to it needs a restart.
+# brain/people/*.md are deliberately NOT here: those are re-read from
+# disk on every reply, so editing a profile takes effect immediately.
+WATCHED=(bot.py brain.py persona.md .env)
 
 # --- helpers ---------------------------------------------------------------
 
@@ -101,8 +104,8 @@ status() {
         return 1
     fi
     echo "running  pid $pid  since $(ps -o lstart= -p "$pid" | xargs)"
-    grep -E 'Live mode:|Mentions:|New day|Poking|Idle openers:' "$LOG" 2>/dev/null |
-        tail -5 | sed 's/^.*personabot: /    /'
+    grep -E 'Live mode:|Mentions:|Allies:|New day|Poking|Idle openers:' "$LOG" 2>/dev/null |
+        tail -6 | sed 's/^.*personabot: /    /'
     local extra
     extra=$(pgrep -cf "$PATTERN")
     [ "$extra" -gt 1 ] && echo "    WARNING: $extra instances running — run ./restart.sh"

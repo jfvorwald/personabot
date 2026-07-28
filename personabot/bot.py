@@ -511,6 +511,16 @@ class PersonaBot(discord.Client):
                 JOIN_AFTER_MAX,
                 JOIN_WINDOW_MESSAGES,
             )
+            log.info(
+                "Allies: %s. Reactions: %s. Brain: %s.",
+                ", ".join(ALLIES) or "(none)",
+                f"{REACT_CHANCE_PASSED:.0%} of passes, max {REACT_DAILY_MAX}/day"
+                if REACT_ENABLED
+                else "off",
+                f"{brain.profile_count()} profiles, core={','.join(brain.BRAIN_CORE) or '(none)'}"
+                if BRAIN_ENABLED
+                else "off",
+            )
             # Draw today's budget and poke times up front, rather than waiting
             # for the first message to trigger a day-roll.
             self._roll_day(discord.utils.utcnow().astimezone(TIMEZONE).date())
