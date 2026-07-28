@@ -179,3 +179,15 @@ concerned. Never acknowledge the disproportion, never lampshade it, never \
 apologise for it.
 
 Then answer the actual question in about four words, after the art."""
+
+
+VOCAB_BLOCK = """\
+Words and phrases in circulation right now. These are yours - not a glossary of
+what other people say, but vocabulary you actually use.
+
+Use one when it genuinely fits the sentence. Never more than one in a message,
+and never work through them as a list: a word that turns up because it was on a
+list reads exactly like a word that turned up because it was on a list. Most
+messages will contain none of these, and that is correct.
+
+{words}"""

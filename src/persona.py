@@ -12,7 +12,8 @@ import os
 import sys
 from datetime import time as dtime
 
-from config import PERSONA_FILE, PSYCHOLOGY_FILE, TIMEZONE
+from config import PERSONA_FILE, PSYCHOLOGY_FILE, TIMEZONE, VOCAB
+from prompts import VOCAB_BLOCK
 from paths import at_root
 
 def load_post_times() -> list[dtime]:
@@ -43,3 +44,10 @@ def load_persona() -> str:
     if not persona:
         raise ValueError(f"{PERSONA_FILE} is empty")
     return persona
+
+
+def load_vocab() -> str:
+    """Jack's current word list, as a prompt block. Empty if he hasn't set one."""
+    if not VOCAB:
+        return ""
+    return VOCAB_BLOCK.format(words="\n".join(f"- {w}" for w in VOCAB))

@@ -23,6 +23,10 @@ PERSONA_FILE = os.getenv("PERSONA_FILE", "persona.md")
 # How conversation works, kept apart from who Jaq is so the two can be
 # edited independently. Optional - absent file just means no block.
 PSYCHOLOGY_FILE = os.getenv("PSYCHOLOGY_FILE", "psychology.md")
+# Words and phrases you want in rotation, comma-separated. Anything Jack
+# picks up and wants Jaq using - good, bad, or in-joke. Edited far more
+# often than the persona itself, which is why it lives here and not there.
+VOCAB = [w.strip() for w in os.getenv("VOCAB", "").split(",") if w.strip()]
 TIMEZONE = ZoneInfo(os.getenv("TIMEZONE", "UTC"))
 HISTORY_LIMIT = int(os.getenv("HISTORY_LIMIT", "30"))
 MODEL = os.getenv("MODEL", "claude-opus-5")

@@ -34,6 +34,8 @@ brain/     profile data (contents gitignored)
 - `tools/doctor.py`, `tools/setup_env.py` - run by a human, never imported.
 - `persona.md` / `psychology.md` - content, at the root where you edit them.
   `persona.md` is untracked.
+- `VOCAB` in `.env` - words to keep in rotation. Lives in config rather than
+  the persona because it changes far more often than the character does.
 
 Read `README.md` for the modes and the full config surface,
 `brain/README.md` for the brain's architecture and the hand-written

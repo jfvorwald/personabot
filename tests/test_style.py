@@ -89,3 +89,19 @@ def test_register_convergence_excludes_swearing():
         "psychology.md must carve profanity out of register matching, or a "
         "clean-sounding channel quietly instructs the bot to clean up too"
     )
+
+
+def test_persona_keeps_compassion_scoped():
+    """A flat "be nice sometimes" beside "mean is the love language" is the
+    contradiction that made the persona bland once already. The warmth has to
+    stay conditional, rare, and explicitly one line."""
+    body = open(os.path.join(ROOT, "persona.md"), encoding="utf-8").read()
+    assert "When someone actually means it" in body
+    assert "only works because it's rare" in body
+    assert "never on someone who is fishing" in body
+
+
+def test_persona_stands_its_ground():
+    body = open(os.path.join(ROOT, "persona.md"), encoding="utf-8").read()
+    assert "Never back down" in body
+    assert "Refusing to do something is not backing down" in body

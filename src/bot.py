@@ -40,7 +40,7 @@ import decide
 import react
 from decide import fold
 from paths import ROOT, at_root
-from persona import load_persona, load_post_times, load_psychology
+from persona import load_persona, load_post_times, load_psychology, load_vocab
 
 
 logging.basicConfig(
@@ -84,6 +84,7 @@ class PersonaBot(discord.Client):
 
         self.persona = persona
         self.psychology = load_psychology()
+        self.vocab = load_vocab()
         self.post_now = post_now
         self.live = live
         self.claude = anthropic.AsyncAnthropic()
@@ -886,6 +887,8 @@ class PersonaBot(discord.Client):
         system = self.persona
         if self.psychology:
             system = f"{system}\n\n---\n\n{self.psychology}"
+        if self.vocab:
+            system = f"{system}\n\n---\n\n{self.vocab}"
         system = f"{system}\n\n---\n\n{framing}"
         if BRAIN_ENABLED:
             try:
