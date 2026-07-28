@@ -41,7 +41,7 @@ def test_counterpart_is_lowest(persona_bot, bot_module, ben_bot):
 
 
 def test_name_in_text_counts_as_addressed(persona_bot, bot_module, stranger):
-    """Named without an @ still counts. Uses the bot's own alias, not "jaq" —
+    """Named without an @ still counts. Uses the bot's own alias, not "jaq" -
     that name belongs to a human in this channel."""
     from test_identity import FakeChannel
 

@@ -13,11 +13,18 @@ out bursts, types at human speed, and reacts instead of replying. When changing
 behaviour, the question to ask is whether it becomes more or less
 person-shaped - not whether it's faster or answers more.
 
-- `bot.py` - the bot. Three modes: `--now`, `--live`, scheduled (no flag).
-- `brain.py` - what Jaq knows about the people in the channel. Module + CLI.
-- `persona.md` - who Jaq is, dropped into the system prompt verbatim. Untracked.
-- `psychology.md` - how conversation works. A separate prompt block on
-  purpose, so the two stay independently editable.
+- `bot.py` - the Discord client and the orchestration. Three modes: `--now`,
+  `--live`, scheduled (no flag).
+- `config.py` - every setting, read from the environment in one place.
+- `decide.py` - whether to speak and whether to wait, as pure functions.
+  **Imports no Discord, on purpose** - that is what makes it testable.
+- `react.py` - reaction budget and emote selection.
+- `prompts.py` - every fixed string the model is shown.
+- `persona.py` - loads `persona.md`, `psychology.md`, and the post schedule.
+- `brain.py` - what Jaq knows about the people here. Module + CLI.
+- `persona.md` - who Jaq is, in the system prompt verbatim. Untracked.
+- `psychology.md` - how conversation works. A separate block on purpose, so the
+  two stay independently editable.
 - `restart.sh` - deploy / status / stop / logs for the live process.
 
 Read `README.md` for the modes and the full config surface,
@@ -71,6 +78,17 @@ so it asserts against documented defaults rather than this machine's config.
 `.venv/bin/python doctor.py` checks each layer in order - env vars, Anthropic
 round-trip, Discord login, channel access - and stops at the first failure.
 `bot.py --now` posts one real message and exits.
+
+## Never use an em dash
+
+Not in code, comments, docs, commit messages, prompts, or replies. Use a hyphen.
+This is absolute.
+
+It matters twice over here: it is Jack's standing preference for everything
+written, and an em dash in `persona.md`, `psychology.md`, or `prompts.py` is
+worse than a style violation - those files are the model's context, so every
+one in them teaches the bot the habit, and an em dash in a Discord message is
+the most recognisable machine tell there is.
 
 ## Never commit
 

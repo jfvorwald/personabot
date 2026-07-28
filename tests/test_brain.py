@@ -121,7 +121,7 @@ def test_note_seen_persists_to_the_index():
 
 
 def test_note_seen_avoids_disk_on_the_common_path(monkeypatch):
-    """It runs once per message of every transcript read — it cannot be a
+    """It runs once per message of every transcript read - it cannot be a
     file read each time, which is what the docstring used to claim falsely."""
     brain.note_seen(42, "Newcomer")
 

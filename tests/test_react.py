@@ -137,7 +137,7 @@ def test_budget_claimed_before_the_delay(persona_bot, stranger, bot_module, monk
     """Concurrent reactions must not all pass the same budget check.
 
     The cap used to be checked, then the task slept up to REACT_DELAY_MAX
-    before incrementing — so every in-flight task saw the same count.
+    before incrementing - so every in-flight task saw the same count.
     """
     seen_during_sleep = []
 

@@ -56,7 +56,7 @@ check_tests() {
 
 check_syntax() {
     if ! $PY -c "import ast, sys; ast.parse(open('bot.py').read())" 2>/tmp/pb_syntax; then
-        echo "SYNTAX ERROR in bot.py — not deploying:"
+        echo "SYNTAX ERROR in bot.py - not deploying:"
         sed 's/^/    /' /tmp/pb_syntax
         return 1
     fi
@@ -105,7 +105,7 @@ start() {
     local pid=$!
     echo "$pid" > "$PIDFILE"
     for _ in $(seq 60); do
-        # Only this run's tail — the log now spans previous deploys too.
+        # Only this run's tail - the log now spans previous deploys too.
         tail -40 "$LOG" 2>/dev/null | grep -q 'Live mode:' && break
         kill -0 "$pid" 2>/dev/null || break
         sleep 0.5
@@ -132,7 +132,7 @@ status() {
         tail -6 | sed 's/^.*personabot: /    /'
     local extra
     extra=$(pgrep -cf "$PATTERN")
-    [ "$extra" -gt 1 ] && echo "    WARNING: $extra instances running — run ./restart.sh"
+    [ "$extra" -gt 1 ] && echo "    WARNING: $extra instances running - run ./restart.sh"
     if check_stale "$pid"; then
         echo "    up to date"
     fi

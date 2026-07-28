@@ -1,4 +1,4 @@
-"""Interactive one-shot writer for .env — avoids editor/path confusion.
+"""Interactive one-shot writer for .env - avoids editor/path confusion.
 
 Run it from your own terminal:  .venv/bin/python setup_env.py
 
@@ -25,14 +25,14 @@ FIELDS = [
 def validate(key: str, value: str) -> str | None:
     """Return an error string, or None if the value looks usable."""
     if key == "CHANNEL_ID" and not re.fullmatch(r"\d{17,20}", value):
-        return "expected 17-20 digits — that looks like the wrong value"
+        return "expected 17-20 digits - that looks like the wrong value"
     if key == "ANTHROPIC_API_KEY" and not value.startswith("sk-ant-"):
         return "Anthropic keys start with 'sk-ant-'"
     if key == "DISCORD_TOKEN":
         if value.startswith("sk-ant-"):
             return "that's the Anthropic key, not the Discord token"
         if value.count(".") != 2:
-            return "expected three dot-separated parts — check you copied the bot token"
+            return "expected three dot-separated parts - check you copied the bot token"
     return None
 
 
@@ -54,7 +54,7 @@ def prompt(key: str, label: str, secret: bool) -> str:
 
 def main() -> int:
     if not os.path.exists(ENV_PATH):
-        print(f"No .env at {ENV_PATH} — copy .env.example first.", file=sys.stderr)
+        print(f"No .env at {ENV_PATH} - copy .env.example first.", file=sys.stderr)
         return 1
 
     with open(ENV_PATH, encoding="utf-8") as f:

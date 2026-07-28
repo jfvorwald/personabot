@@ -1,4 +1,4 @@
-"""personabot — a persona-driven Discord bot that speaks on a fixed schedule.
+"""personabot - a persona-driven Discord bot that speaks on a fixed schedule.
 
 Each participant runs their own copy of this file with their own Discord bot
 token, their own Anthropic API key, and their own persona file. Both bots sit
@@ -29,16 +29,17 @@ import json
 import unicodedata
 from collections import deque
 from datetime import time as dtime
-from zoneinfo import ZoneInfo
 
 import anthropic
 import discord
 from discord.ext import tasks
-from dotenv import load_dotenv
 
 import brain
+import decide
+import react
+from decide import fold
+from persona import load_persona, load_post_times, load_psychology
 
-load_dotenv()
 
 logging.basicConfig(
     level=logging.INFO,
@@ -46,302 +47,20 @@ logging.basicConfig(
 )
 log = logging.getLogger("personabot")
 
-DISCORD_TOKEN = os.environ["DISCORD_TOKEN"]
-CHANNEL_ID = int(os.environ["CHANNEL_ID"])
-PERSONA_FILE = os.getenv("PERSONA_FILE", "persona.md")
-# How conversation works, kept apart from who Jaq is so the two can be
-# edited independently. Optional — absent file just means no block.
-PSYCHOLOGY_FILE = os.getenv("PSYCHOLOGY_FILE", "psychology.md")
-TIMEZONE = ZoneInfo(os.getenv("TIMEZONE", "UTC"))
-HISTORY_LIMIT = int(os.getenv("HISTORY_LIMIT", "30"))
-MODEL = os.getenv("MODEL", "claude-opus-5")
-EFFORT = os.getenv("EFFORT", "low")
+from config import *  # noqa: F403  (every setting, by name)
 
-# --live guards. Two bots that each reply on every message would loop forever,
-# so live mode ignores bot authors by default and rations replies per day.
-LIVE_REPLY_TO_BOTS = os.getenv("LIVE_REPLY_TO_BOTS", "false").lower() == "true"
+from prompts import (
+    BRUSH_OFF_PROMPT,
+    FALLBACK_BRUSH_OFF,
+    FRAMING,
+    MAX_DISCORD_CHARS,
+    OPENER_PROMPT,
+    PASS_TOKEN,
+    POKE_PROMPT,
+    REACT_PROMPT,
+    SILENCE_OPTION,
+)
 
-# A fresh budget is drawn in this range each day rather than using a fixed
-# number — a bot that stops dead on the same count every day is a bot people
-# can measure. Only messages actually posted count against it.
-#
-# Set LIVE_DAILY_MAX=0 for no limit. Note that the budget is the only hard
-# stop on two bots replying to each other forever; with it off, the brakes are
-# the model's own choice to <pass> and nothing else.
-LIVE_DAILY_MIN = int(os.getenv("LIVE_DAILY_MIN", "4"))
-LIVE_DAILY_MAX = int(os.getenv("LIVE_DAILY_MAX", "10"))
-LIVE_UNLIMITED = LIVE_DAILY_MAX <= 0
-
-# Counterpart bots: matched case-insensitively against the Discord display
-# name. These bypass the ignore-other-bots rule so the two personas can talk at
-# all — but they are NOT guaranteed a reply. Letting one sit unanswered is
-# allowed, and everything still spends from the daily budget, which is what
-# keeps two bots from ping-ponging forever.
-LIVE_COUNTERPARTS = [
-    n.strip().lower()
-    for n in os.getenv("LIVE_COUNTERPARTS", "agentic ben,agenticben").split(",")
-    if n.strip()
-]
-
-# Unprompted conversation starters. Every IDLE_CHECK_MINUTES the bot looks at
-# how quiet the channel has been; past IDLE_HOURS it may open a new thread of
-# its own, subject to IDLE_CHANCE and the same daily budget.
-IDLE_HOURS = float(os.getenv("IDLE_HOURS", "5"))
-IDLE_CHECK_MINUTES = float(os.getenv("IDLE_CHECK_MINUTES", "30"))
-IDLE_CHANCE = float(os.getenv("IDLE_CHANCE", "0.4"))
-
-# Joining a conversation already in progress. Answering the first message of a
-# thread we aren't part of reads as surveillance, not company — a person who
-# wanders over lets a few go by first. A fresh target is drawn per thread so
-# the delay isn't a countable tell.
-JOIN_AFTER_MIN = int(os.getenv("JOIN_AFTER_MIN", "2"))
-JOIN_AFTER_MAX = int(os.getenv("JOIN_AFTER_MAX", "5"))
-# Past this many messages the moment has gone: whatever we'd have said is now
-# about something two topics back. Redraw and wait for the next opening rather
-# than answer stale context.
-JOIN_WINDOW_MESSAGES = int(os.getenv("JOIN_WINDOW_MESSAGES", "8"))
-
-# What Jaq knows about the people here. Profiles are written offline by
-# brain.py; the live bot only reads them, and notes anyone it hasn't met so
-# the next scan has a to-do list. See brain/README.md.
-BRAIN_ENABLED = os.getenv("BRAIN_ENABLED", "true").lower() == "true"
-
-# Where the day's spend is kept so it survives a restart. Without this the
-# budget only ever bounds a single process: deploying re-draws it and zeroes
-# the counters, so a day with ten deploys has no effective cap at all.
-STATE_FILE = os.getenv("STATE_FILE", ".bot_state.json")
-
-# Names the bot answers to, beyond a real @mention. Deliberately does NOT
-# include a bare "jaq": the persona is called Jaq and so is its creator, so a
-# bare "jaq" in this channel is ambiguous and usually means the human.
-BOT_ALIASES = [
-    n.strip().lower()
-    for n in os.getenv("BOT_ALIASES", "agentic jaq,agentix").split(",")
-    if n.strip()
-]
-
-# Reactions. People react far more often than they reply, so this fires on
-# messages we decided NOT to answer — it costs a fraction of a reply and buys
-# back the presence that staying silent gives up. Spends its own budget so it
-# can never eat into the day's replies.
-REACT_ENABLED = os.getenv("REACT_ENABLED", "true").lower() == "true"
-# Chance of reacting to something we passed on, and (much lower) to something
-# we did answer — people occasionally do both.
-REACT_CHANCE_PASSED = float(os.getenv("REACT_CHANCE_PASSED", "0.25"))
-REACT_CHANCE_REPLIED = float(os.getenv("REACT_CHANCE_REPLIED", "0.05"))
-REACT_DAILY_MAX = int(os.getenv("REACT_DAILY_MAX", "25"))
-# Reacting the instant a message lands is as much a tell as replying instantly.
-REACT_DELAY_MIN = float(os.getenv("REACT_DELAY_MIN", "2"))
-REACT_DELAY_MAX = float(os.getenv("REACT_DELAY_MAX", "45"))
-# How many recent picks to withhold from the model, forcing variety.
-REACT_RECENT_MEMORY = int(os.getenv("REACT_RECENT_MEMORY", "6"))
-
-# Allies. Matched like counterparts, against username and display name.
-# Everything the bot does to ration its attention — the dice roll, hanging
-# back, the end-of-day sign-off — exists to stop it pestering a room. None of
-# that should ever read as blanking a friend, so allies bypass it.
-ALLIES = [n.strip().lower() for n in os.getenv("ALLIES", "").split(",") if n.strip()]
-# Discord user ids of allies. Ids never change; display names do, and a name
-# that stops matching silently downgrades a friend to a stranger.
-ALLY_IDS = {i.strip() for i in os.getenv("ALLY_IDS", "").split(",") if i.strip()}
-REPLY_CHANCE_ALLY = float(os.getenv("REPLY_CHANCE_ALLY", "0.9"))
-
-# --- Making it behave like a person in a room, not a request handler --------
-#
-# Two separate problems. First, whether to speak at all: a real person in a
-# group chat reads most messages and answers some. Rolling this client-side
-# (before any API call) is both cheaper and more decisive than asking the model
-# to choose <pass> every time, which it under-uses.
-REPLY_CHANCE_ADDRESSED = float(os.getenv("REPLY_CHANCE_ADDRESSED", "0.95"))
-REPLY_CHANCE_HUMAN = float(os.getenv("REPLY_CHANCE_HUMAN", "0.70"))
-REPLY_CHANCE_COUNTERPART = float(os.getenv("REPLY_CHANCE_COUNTERPART", "0.45"))
-# Multiplier applied when we were the last one talking — stops two bots from
-# locking into strict alternation, and stops anyone monologuing.
-REPLY_DECAY_IF_LAST_SPEAKER = float(os.getenv("REPLY_DECAY_IF_LAST_SPEAKER", "0.35"))
-# Applied per message of ours in the recent window beyond the first.
-REPLY_DECAY_IF_DOMINATING = float(os.getenv("REPLY_DECAY_IF_DOMINATING", "0.6"))
-
-# Second, timing. Instant replies are the biggest tell. Read the room, think,
-# then type at human speed.
-SETTLE_SECONDS = float(os.getenv("SETTLE_SECONDS", "6"))       # let a burst finish
-THINK_SECONDS_MIN = float(os.getenv("THINK_SECONDS_MIN", "2"))
-THINK_SECONDS_MAX = float(os.getenv("THINK_SECONDS_MAX", "25"))
-TYPING_CPS = float(os.getenv("TYPING_CPS", "13"))              # chars per second
-TYPING_SECONDS_MAX = float(os.getenv("TYPING_SECONDS_MAX", "20"))
-
-# Unprompted interrogations of the counterpart bot. A few times a day, at
-# times drawn fresh each morning, walk up and ask him something absurd.
-POKE_MIN_PER_DAY = int(os.getenv("POKE_MIN_PER_DAY", "2"))
-POKE_MAX_PER_DAY = int(os.getenv("POKE_MAX_PER_DAY", "3"))
-POKE_WINDOW_START = int(os.getenv("POKE_WINDOW_START", "9"))  # local hour
-POKE_WINDOW_END = int(os.getenv("POKE_WINDOW_END", "22"))
-# Two pokes never land closer together than this many minutes.
-POKE_MIN_GAP_MINUTES = int(os.getenv("POKE_MIN_GAP_MINUTES", "75"))
-
-POKE_PROMPT = """\
-Walk up to {target} out of nowhere and ask him one question. Requirements:
-
-- It must be genuinely ridiculous — an absurd hypothetical, an unhinged \
-either/or, a demand that he account for something he never did, or a question \
-built on a premise he never agreed to.
-- Ask it completely straight, as though it's a reasonable thing to want to \
-know and you're mildly impatient for the answer.
-- No greeting, no preamble, no "random question but." Open with the question.
-- One sentence. Two at the absolute most.
-- Do not explain the joke, acknowledge that it's strange, or soften it.
-
-Vary the shape from anything you've already asked in the transcript above — \
-don't reuse a format you've used before."""
-
-OPENER_PROMPT = """\
-Nobody has said anything in a while. Start something — an opinion nobody asked \
-for, a grievance, a callback to something from earlier, or a question designed \
-to make someone incriminate themselves. Do not greet anyone, do not remark on \
-the silence, do not ask how anyone is. Just walk in with something."""
-
-# Said once when the budget runs out, then nothing more until tomorrow.
-BRUSH_OFF_PROMPT = """\
-You're done talking for today — out of energy for this, nothing dramatic. \
-Write ONE short line, in character, that signals you're out and they should \
-come back later. Under 15 words. Don't explain why, don't apologise, don't \
-mention limits, quotas, or anything system-like. Just a person signing off."""
-
-FALLBACK_BRUSH_OFF = "alright, that's me done for today. catch you tomorrow"
-
-REACT_PROMPT = """\
-You are picking a Discord reaction for the LAST message in the conversation \
-below. The decision to react has already been made — your job is choosing \
-which one, not whether to react at all.
-
-Available (use the exact name, no colons):
-{emotes}
-
-Rules:
-- Reply with nothing but the name. No colons, no punctuation, no explanation.
-- Commit to a choice. Only answer PASS if the message is genuinely \
-unreactable — an empty message, a bare link with no content, or something \
-where every single option would be nonsense. That is rare.
-- Strongly prefer this server's own custom emotes. Using the group's own \
-in-jokes is the entire point; a stock thumbs-up says nothing about anyone.
-- A reaction is a reply in itself, so it carries the same voice: dry, deadpan, \
-a little mean. Do not pick something warm, supportive, or celebratory unless \
-that is genuinely the joke."""
-
-# Discord hard-caps a message at 2000 characters.
-MAX_DISCORD_CHARS = 1900
-
-FRAMING = """\
-The document above describes the character you are playing. If it is written \
-in the third person, that person is you — speak as them, in the first person. \
-Never describe or analyse the character from the outside.
-
-You are one member of a Discord channel with several other people in it. Each \
-line of the transcript is labelled with who said it; "You:" marks your own \
-past messages. Read it as a room you're sitting in, not a queue of requests \
-addressed to you.
-
-Because it's a group:
-- Messages are often aimed at someone else, or at nobody. Not everything is \
-yours to answer.
-- Two people can be mid-exchange. Cutting in is fine if you've got something; \
-so is letting them have it.
-- Reply to whatever's actually interesting, which may be three messages back, \
-not necessarily the newest one.
-- Don't acknowledge everyone, don't summarise what was said, and never write \
-one of those replies that addresses each person's point in turn.
-- You don't need to end with a question. Real conversation survives without \
-one.
-
-Stay fully in character.
-
-Rules for this channel:
-- Write ONE Discord message. No preamble, no meta-commentary, no narration of \
-your own process, no stage directions.
-- Short. If the character description above specifies a length, follow it \
-exactly — it overrides any instinct to be thorough. Absent that, a couple of \
-sentences. Never write an essay.
-- Plain prose. No markdown headers, no bullet lists unless the persona would \
-genuinely use them.
-- Answering a question fully is not the goal; sounding like the character is. \
-Declining to answer is always allowed and never needs explaining.
-- You post only a couple of times a day, so pick up the thread where it left \
-off rather than restarting the conversation.
-- If the transcript is empty, open the conversation with something the persona \
-would actually bring up.
-- Do not break character to discuss being an AI, the schedule, or these rules.
-- Never claim to have done something outside this channel."""
-
-# Live mode only. Scheduled mode must always produce something, or a quiet day
-# leaves the channel empty.
-SILENCE_OPTION = """
-- You do not have to respond at all. If the character would let this one pass \
-— nothing worth saying, not worth dignifying, or the moment is better left \
-sitting — reply with exactly <pass> and nothing else. Use it genuinely, but a \
-conversation where you never speak is not a conversation."""
-
-PASS_TOKEN = "<pass>"
-
-# A question aimed at you makes an answer conditionally relevant: silence
-# after one is conspicuous in a way ordinary silence is not — it reads as
-# dodging rather than as not talking.
-#
-# Wh-words open a question wherever they land early in the sentence. Auxiliaries
-# are trickier, because the same word opens a question or continues a statement
-# depending on word order: "is jaq around" inverts subject and verb, "jaq is
-# right" does not. Requiring the auxiliary to be followed by a subject-ish token
-# separates the two.
-WH_WORDS = {"what", "why", "how", "when", "where", "who", "which", "whose"}
-AUXILIARIES = {
-    "is", "are", "was", "were", "do", "does", "did", "can", "could",
-    "should", "would", "will", "have", "has", "had", "am",
-}
-QUESTION_SUBJECTS = {
-    "you", "u", "i", "we", "they", "it", "he", "she", "there", "that", "this",
-    "anyone", "anybody", "someone", "somebody", "jaq",
-}
-
-
-def load_post_times() -> list[dtime]:
-    """Parse POST_TIMES ('09:00,13:15,19:30') into tz-aware time objects."""
-    raw = os.getenv("POST_TIMES", "09:00")
-    times = []
-    for chunk in raw.split(","):
-        chunk = chunk.strip()
-        if not chunk:
-            continue
-        hour, minute = chunk.split(":")
-        times.append(dtime(hour=int(hour), minute=int(minute), tzinfo=TIMEZONE))
-    if not times:
-        raise ValueError("POST_TIMES is empty")
-    return times
-
-
-def fold(text: str) -> str:
-    """Lowercase and fold decorative unicode down to plain characters.
-
-    Discord nicknames are routinely written in fullwidth or styled unicode —
-    this bot's own is "\uff21\uff47\uff45\uff4e\uff54\uff49\uff43 \uff2a\uff41\uff51". Those code points are not the
-    ASCII letters they look like, so any substring match against them fails
-    silently. NFKC maps them back.
-    """
-    return unicodedata.normalize("NFKC", text).lower()
-
-
-def load_psychology() -> str:
-    """Conversation mechanics. Optional; missing file is not an error."""
-    path = os.path.join(os.path.dirname(os.path.abspath(__file__)), PSYCHOLOGY_FILE)
-    if not os.path.exists(path):
-        return ""
-    with open(path) as f:
-        return f.read().strip()
-
-
-def load_persona() -> str:
-    with open(PERSONA_FILE, encoding="utf-8") as f:
-        persona = f.read().strip()
-    if not persona:
-        raise ValueError(f"{PERSONA_FILE} is empty")
-    return persona
 
 
 class PersonaBot(discord.Client):
@@ -353,7 +72,7 @@ class PersonaBot(discord.Client):
         live: bool = False,
     ):
         intents = discord.Intents.default()
-        # Privileged intent — must also be switched on in the Developer Portal.
+        # Privileged intent - must also be switched on in the Developer Portal.
         intents.message_content = True
         super().__init__(intents=intents)
 
@@ -383,7 +102,7 @@ class PersonaBot(discord.Client):
         """Kick off a reaction without blocking the reply path.
 
         Reactions wait a while before landing, and _respond_like_a_person runs
-        holding the one-at-a-time lock — awaiting that delay inline would stall
+        holding the one-at-a-time lock - awaiting that delay inline would stall
         a mention queued behind it for the length of the pause.
         """
         if not REACT_ENABLED:
@@ -406,7 +125,7 @@ class PersonaBot(discord.Client):
         chance = REACT_CHANCE_REPLIED if replied else REACT_CHANCE_PASSED
         if random.random() > chance:
             return
-        if REACT_DAILY_MAX and self._reactions_today >= REACT_DAILY_MAX:
+        if not react.within_budget(self._reactions_today, REACT_DAILY_MAX):
             return
         # Nothing to react to. Attachments and bare embeds come through with
         # empty text, and a reaction picked from no content is a coin flip.
@@ -415,17 +134,7 @@ class PersonaBot(discord.Client):
 
         guild = getattr(message.channel, "guild", None)
         custom = {e.name: e for e in (guild.emojis if guild else [])}
-        # A deliberately unfriendly stock set — the default unicode reactions
-        # skew warm, which is the wrong register for this persona entirely.
-        standard = ["💀", "👀", "🫡", "🤨", "😐", "🔥", "⚰️", "🥀"]
-        # Custom emote names are opaque to the model (nobody can infer what
-        # ":bcb:" depicts), so it gravitates to the one or two it recognises
-        # and reacts identically every time — louder than not reacting at all.
-        # Withholding the recent picks forces rotation without needing the
-        # model to understand any individual emote.
-        names = [
-            n for n in list(custom) + standard if n not in self._recent_reactions
-        ]
+        names = react.offerable(custom, self._recent_reactions)
         if not names:
             return
 
@@ -434,7 +143,8 @@ class PersonaBot(discord.Client):
         except Exception:
             log.exception("Reaction pick failed")
             return
-        if not choice or (choice not in custom and choice not in standard):
+        choice = react.parse_choice(choice, names)
+        if not choice:
             return
 
         # Claim the slot before the delay, not after. Several reaction tasks
@@ -459,7 +169,7 @@ class PersonaBot(discord.Client):
         )
 
     async def _pick_reaction(self, channel, names: list[str]) -> str | None:
-        """Ask for one emote name, or PASS. Small prompt — this is not a reply."""
+        """Ask for one emote name, or PASS. Small prompt - this is not a reply."""
         lines = []
         async for m in channel.history(limit=6):
             text = m.clean_content.strip()
@@ -582,7 +292,7 @@ class PersonaBot(discord.Client):
             when = datetime.combine(today, dtime(0, 0), tzinfo=TIMEZONE) + timedelta(
                 minutes=m
             )
-            # Slots already past — mid-day restart, or a late start — are
+            # Slots already past - mid-day restart, or a late start - are
             # dropped rather than fired immediately.
             if when <= now:
                 skipped += 1
@@ -671,7 +381,7 @@ class PersonaBot(discord.Client):
             return
         if not message.clean_content.strip():
             log.warning(
-                "Message from %s came through empty — MESSAGE CONTENT INTENT is "
+                "Message from %s came through empty - MESSAGE CONTENT INTENT is "
                 "probably off in the Developer Portal",
                 message.author.display_name,
             )
@@ -683,7 +393,7 @@ class PersonaBot(discord.Client):
 
         mentioned = self._mentioned_me(message)
 
-        # One at a time — otherwise fast consecutive messages race each other
+        # One at a time - otherwise fast consecutive messages race each other
         # and the bot answers the same context twice. A direct mention queues
         # for the lock instead of being dropped; being mid-sentence is not a
         # reason to ignore someone who asked us a question by name.
@@ -717,7 +427,7 @@ class PersonaBot(discord.Client):
             except Exception:
                 log.exception("Live reply failed")
                 return
-            # Staying silent is free — only real messages spend the budget.
+            # Staying silent is free - only real messages spend the budget.
             if posted:
                 self._replies_today += 1
                 # We're in the conversation now; the next one starts a fresh
@@ -731,7 +441,7 @@ class PersonaBot(discord.Client):
                 )
 
     def _mentioned_me(self, message: discord.Message) -> bool:
-        """A real Discord @mention — an unambiguous request for an answer."""
+        """A real Discord @mention - an unambiguous request for an answer."""
         return self.user in message.mentions
 
     def _is_ally(self, message: discord.Message) -> bool:
@@ -743,48 +453,15 @@ class PersonaBot(discord.Client):
             return True
         if not ALLIES:
             return False
-        names = {
-            fold(message.author.display_name),
-            fold(message.author.name or ""),
-        }
-        return any(fold(a) in n for a in ALLIES for n in names if n)
+        return decide.name_matches(
+            {message.author.display_name, message.author.name or ""}, ALLIES
+        )
 
     def _direct_question(self, message: discord.Message) -> bool:
         """Addressed to us, and shaped like a question."""
         if not self._addressed_to_me(message):
             return False
-        text = message.clean_content.strip().lower()
-        if not text:
-            return False
-        if text.endswith("?"):
-            return True
-
-        words = [w.strip("@,.!") for w in text.split()]
-        if not words:
-            return False
-        if set(words[:3]) & WH_WORDS:
-            return True
-        # Elliptical openers: "anyone know if..." is "does anyone know if...",
-        # and it is still a question the room expects an answer to.
-        if words[0] in ("anyone", "anybody", "someone", "somebody"):
-            return True
-
-        # Drop a leading address ("agentix can you look" -> "can you look") so
-        # the inversion test sees the actual clause. Derived from the names we
-        # actually answer to rather than hardcoded, or it breaks on a rename.
-        mine = {
-            w
-            for name in self._my_names(message)
-            for w in name.split()
-            if w.isalnum()
-        }
-        if words[0] in mine | {"hey", "yo", "oi"} and len(words) > 1:
-            words = words[1:]
-        return (
-            len(words) > 1
-            and words[0] in AUXILIARIES
-            and words[1] in QUESTION_SUBJECTS | mine
-        )
+        return decide.is_question(message.clean_content, self._my_names(message))
 
     def _my_names(self, message: discord.Message) -> set[str]:
         """Every name this bot answers to in this channel.
@@ -821,7 +498,7 @@ class PersonaBot(discord.Client):
     def _hang_back(self, mine: int) -> bool:
         """Should we let the others keep talking a while longer?
 
-        Only applies to conversations we aren't already in — once we've spoken,
+        Only applies to conversations we aren't already in - once we've spoken,
         the REPLY_DECAY_* multipliers handle how much we keep talking.
         """
         if mine:
@@ -858,25 +535,27 @@ class PersonaBot(discord.Client):
             base = REPLY_CHANCE_HUMAN
             reason = "human"
 
-        # The last-speaker decay exists to stop two bots locking into strict
-        # alternation. Alternating with a friend is just having a conversation,
-        # so allies don't pay it. The dominating decay still applies to
-        # everyone — nobody gets a licence to monologue.
         if mine and others_since_me == 0 and not ally:
-            base *= REPLY_DECAY_IF_LAST_SPEAKER
             reason += ", I spoke last"
         if mine > 1:
-            base *= REPLY_DECAY_IF_DOMINATING ** (mine - 1)
             reason += f", {mine}/6 recent are mine"
 
+        base = decide.reply_chance(
+            base=base,
+            mine=mine,
+            others_since_me=others_since_me,
+            exempt_from_last_speaker=ally,
+            decay_last_speaker=REPLY_DECAY_IF_LAST_SPEAKER,
+            decay_dominating=REPLY_DECAY_IF_DOMINATING,
+        )
         log.info("Reply chance %.2f (%s)", base, reason)
         return base
 
     async def _respond_like_a_person(self, message, counterpart: bool) -> bool:
-        """Decide, wait, then answer — or quietly don't."""
+        """Decide, wait, then answer - or quietly don't."""
         mine, others_since_me = await self._recent_mix(message)
 
-        # A direct @mention is a question with our name on it. Answer it —
+        # A direct @mention is a question with our name on it. Answer it -
         # no dice roll, no hanging back, no decay for having just spoken.
         if self._mentioned_me(message):
             log.info("Directly mentioned; answering")
@@ -894,7 +573,7 @@ class PersonaBot(discord.Client):
             # Adjacency pairs: a question aimed at us makes an answer
             # conditionally relevant, and a missing second part is conspicuous.
             # Hanging back through one doesn't read as staying quiet, it reads
-            # as dodging — so questions skip the wait and roll immediately.
+            # as dodging - so questions skip the wait and roll immediately.
             log.info("Direct question; not hanging back")
             chance = await self._reply_chance(
                 message, counterpart, mine, others_since_me
@@ -961,7 +640,7 @@ class PersonaBot(discord.Client):
         last = None
         async for msg in channel.history(limit=1):
             last = msg
-        # Don't talk into the void twice in a row — if the last word was ours,
+        # Don't talk into the void twice in a row - if the last word was ours,
         # wait for someone to answer.
         if last is not None and last.author.id == self.user.id:
             return
@@ -982,11 +661,11 @@ class PersonaBot(discord.Client):
 
         # Probabilistic, so it doesn't open on a visible clock tick.
         if random.random() > IDLE_CHANCE:
-            log.info("Channel quiet %.1fh — skipping this opener", quiet_hours)
+            log.info("Channel quiet %.1fh - skipping this opener", quiet_hours)
             return
 
         async with self._busy:
-            log.info("Channel quiet %.1fh — opening a conversation", quiet_hours)
+            log.info("Channel quiet %.1fh - opening a conversation", quiet_hours)
             try:
                 async with channel.typing():
                     transcript, speakers = await self.read_transcript(channel)
@@ -1078,7 +757,7 @@ class PersonaBot(discord.Client):
         try:
             await self.speak()
         except Exception:
-            # Never let one bad turn kill the loop — it has to survive until tomorrow.
+            # Never let one bad turn kill the loop - it has to survive until tomorrow.
             log.exception("Scheduled post failed; will try again at the next slot")
 
     async def speak(self, may_stay_silent: bool = False) -> bool:
@@ -1114,7 +793,7 @@ class PersonaBot(discord.Client):
                     msg.author.id, msg.author.display_name, msg.author.name
                 ):
                     log.info(
-                        "First time meeting %s — noted for the next brain scan",
+                        "First time meeting %s - noted for the next brain scan",
                         msg.author.display_name,
                     )
             who = "You" if msg.author.id == self.user.id else msg.author.display_name
@@ -1195,7 +874,7 @@ def main() -> int:
     try:
         bot.run(DISCORD_TOKEN, log_handler=None)
     except discord.LoginFailure:
-        log.error("Discord rejected the token — check DISCORD_TOKEN in .env")
+        log.error("Discord rejected the token - check DISCORD_TOKEN in .env")
         return 1
     except asyncio.CancelledError:
         pass

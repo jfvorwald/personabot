@@ -1,4 +1,4 @@
-"""The brain — what Jaq knows about the people he talks to.
+"""The brain - what Jaq knows about the people he talks to.
 
 Two jobs in one file. As a module, bot.py imports it to load profiles into the
 system prompt and to note people it hasn't met. As a script, it scans channel
@@ -11,7 +11,7 @@ history and writes those profiles:
 
 Discord already stores every message forever, so nothing here duplicates that.
 The brain holds only conclusions, and re-derives them from Discord on demand.
-The live bot never writes prose about anyone — it only records that it saw
+The live bot never writes prose about anyone - it only records that it saw
 somebody, which costs nothing. Profiles are written here, in batches, where the
 model can read hundreds of a person's messages at once instead of the handful
 sitting in a live context window.
@@ -49,7 +49,7 @@ BRAIN_MIN_MESSAGES = int(os.getenv("BRAIN_MIN_MESSAGES", "70"))
 # Don't burn a call to re-read someone who's barely spoken since last time.
 BRAIN_MIN_NEW = int(os.getenv("BRAIN_MIN_NEW", "25"))
 BRAIN_SCAN_LIMIT = int(os.getenv("BRAIN_SCAN_LIMIT", "4000"))
-# Handles never profiled — your own account, the bot itself.
+# Handles never profiled - your own account, the bot itself.
 BRAIN_EXCLUDE = [h.strip().lower() for h in os.getenv("BRAIN_EXCLUDE", "").split(",") if h.strip()]
 
 MODEL = os.getenv("BRAIN_MODEL", os.getenv("MODEL", "claude-sonnet-5"))
@@ -72,8 +72,8 @@ ever see that you know these people, never that you have files on them."""
 
 PROFILE_PROMPT = """\
 You are writing a private character note about one member of a Discord friend
-group. It will be handed to another member of that group — a persona named Jaq
-— so he knows who he's talking to.
+group. It will be handed to another member of that group - a persona named Jaq
+- so he knows who he's talking to.
 
 Write exactly three sections, with these headings and nothing before them:
 
@@ -84,7 +84,7 @@ Write exactly three sections, with these headings and nothing before them:
 Rules:
 
 - Ground every claim in the messages given. Invent nothing. If the evidence is
-  thin, say less — a short accurate note beats a confident wrong one.
+  thin, say less - a short accurate note beats a confident wrong one.
 - This is comedic working material, not a dossier. Prioritise verbal tics,
   catchphrases, recurring jokes, what they always steer toward, who they spar
   with, and what they can reliably be wound up about.
@@ -104,8 +104,8 @@ Rules:
 def count_new(message_ids: list[int], since: int) -> int:
     """How many of these messages postdate the last one we read.
 
-    Snowflake ids are monotonic, so this is exact. The obvious alternative —
-    comparing this scan's message count against the previous scan's — is not:
+    Snowflake ids are monotonic, so this is exact. The obvious alternative -
+    comparing this scan's message count against the previous scan's - is not:
     BRAIN_SCAN_LIMIT is a sliding window, so a person's count inside it drifts
     down as other people talk, the delta never reaches BRAIN_MIN_NEW, and every
     profile freezes permanently after the first scan.
@@ -117,7 +117,7 @@ def _is_excluded(user_id: str, handle: str, display: str) -> bool:
     """Never-profile check. Ids are authoritative; names are a convenience.
 
     A name match is offered so BRAIN_EXCLUDE is writable before you know
-    anyone's id, but it is not sufficient on its own — once someone is excluded
+    anyone's id, but it is not sufficient on its own - once someone is excluded
     the flag is persisted against their id and honoured from then on, so a
     rename can't quietly bring them back into scope.
     """
@@ -170,7 +170,7 @@ def write_profile(handle: str, display: str, generated: str, handwritten: str) -
     if not handwritten:
         handwritten = (
             "## Jaq's read\n\n"
-            "_Nothing yet. Write how Jaq feels about them here — it survives "
+            "_Nothing yet. Write how Jaq feels about them here - it survives "
             "every future scan._"
         )
     body = f"# {display} ({handle})\n\n{generated.strip()}\n\n{HANDWRITTEN_MARKER}\n\n{handwritten.strip()}\n"
@@ -190,7 +190,7 @@ def note_seen(user_id: int, display_name: str, handle: str = "") -> bool:
 
     This is the whole of the live bot's involvement in the brain: it builds the
     to-do list that `brain.py scan` works through. A no-op for anyone already
-    known — and the in-process cache is what makes that true, since the live
+    known - and the in-process cache is what makes that true, since the live
     bot calls this once per message in every transcript it reads.
     """
     key = str(user_id)
@@ -267,7 +267,7 @@ async def _write_one(client, handle, display, entries, existing_generated):
     prompt = PROFILE_PROMPT
     if existing_generated:
         prompt += (
-            "\n\nYou are revising an existing note. Here it is — keep what still "
+            "\n\nYou are revising an existing note. Here it is - keep what still "
             "holds, correct what the new messages contradict, and fold in what's "
             "new. Return the full revised note, not a diff, and do not let it "
             "grow past the length limit.\n\n"
@@ -284,11 +284,11 @@ async def _write_one(client, handle, display, entries, existing_generated):
         messages=[{"role": "user", "content": user}],
     )
     if response.stop_reason == "refusal":
-        print(f"  {display}: model declined — skipped")
+        print(f"  {display}: model declined - skipped")
         return None
     if response.stop_reason == "max_tokens":
         # Silently keeping a note that stops mid-sentence is worse than none.
-        print(f" TRUNCATED at max_tokens — skipped")
+        print(f" TRUNCATED at max_tokens - skipped")
         return None
     return "".join(b.text for b in response.content if b.type == "text").strip()
 
@@ -349,7 +349,7 @@ async def scan(channel_id: int, force: bool) -> int:
                 entry["is_bot"] = author.bot
 
                 # Exclusion is sticky and keyed on the user id, never on the
-                # display name. Names change — this file already keys people by
+                # display name. Names change - this file already keys people by
                 # id for exactly that reason, and matching the exclude list
                 # against a name silently un-excludes someone the day they
                 # rename themselves.
@@ -414,7 +414,7 @@ def cmd_list() -> int:
     index = load_index()
     people = index.get("people", {})
     if not people:
-        print("brain is empty — run: .venv/bin/python brain.py scan")
+        print("brain is empty - run: .venv/bin/python brain.py scan")
         return 0
 
     profiled, seen = [], []

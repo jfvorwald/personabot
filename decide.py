@@ -1,0 +1,109 @@
+"""The arithmetic of whether to speak, and whether to wait.
+
+Deliberately free of any Discord import. Everything here takes plain values and
+returns plain values, which is what makes it testable without fabricating a
+gateway connection - the friction that motivated splitting this out in the
+first place.
+
+Configuration is passed in rather than read from the environment, so a caller
+can exercise these with any settings without re-importing a module.
+"""
+
+from __future__ import annotations
+
+import unicodedata
+
+# A question aimed at you makes an answer conditionally relevant: silence
+# after one is conspicuous in a way ordinary silence is not - it reads as
+# dodging rather than as not talking.
+#
+# Wh-words open a question wherever they land early in the sentence. Auxiliaries
+# are trickier, because the same word opens a question or continues a statement
+# depending on word order: "is jaq around" inverts subject and verb, "jaq is
+# right" does not. Requiring the auxiliary to be followed by a subject-ish token
+# separates the two.
+WH_WORDS = {"what", "why", "how", "when", "where", "who", "which", "whose"}
+AUXILIARIES = {
+    "is", "are", "was", "were", "do", "does", "did", "can", "could",
+    "should", "would", "will", "have", "has", "had", "am",
+}
+QUESTION_SUBJECTS = {
+    "you", "u", "i", "we", "they", "it", "he", "she", "there", "that", "this",
+    "anyone", "anybody", "someone", "somebody", "jaq",
+}
+
+
+def fold(text: str) -> str:
+    """Lowercase and fold decorative unicode down to plain characters.
+
+    Discord nicknames are routinely written in fullwidth or styled unicode -
+    this bot's own is "Ａｇｅｎｔｉｃ Ｊａｑ". Those code points are not the ASCII
+    letters they resemble, so any substring match against them fails silently.
+    NFKC maps them back.
+    """
+    return unicodedata.normalize("NFKC", text).lower()
+
+
+def name_matches(candidates: set[str], patterns: list[str]) -> bool:
+    """True if any pattern appears in any candidate name, unicode-folded."""
+    folded = {fold(c) for c in candidates if c}
+    return any(fold(p) in name for p in patterns for name in folded)
+
+
+def reply_chance(
+    *,
+    base: float,
+    mine: int,
+    others_since_me: int,
+    exempt_from_last_speaker: bool,
+    decay_last_speaker: float,
+    decay_dominating: float,
+) -> float:
+    """Damp a base rate by how much of the recent window is already ours.
+
+    The last-speaker decay exists to stop two bots locking into strict
+    alternation; alternating with a friend is just a conversation, so allies are
+    exempt. The dominating decay applies to everyone - nobody gets a licence to
+    monologue.
+    """
+    chance = base
+    if mine and others_since_me == 0 and not exempt_from_last_speaker:
+        chance *= decay_last_speaker
+    if mine > 1:
+        chance *= decay_dominating ** (mine - 1)
+    return chance
+
+
+def is_question(text: str, my_names: set[str]) -> bool:
+    """Is this shaped like a question aimed at us?
+
+    A question makes an answer conditionally relevant, and a missing second part
+    is conspicuous - it reads as dodging rather than as silence. Detection has to
+    survive the fact that the same auxiliary opens a question or continues a
+    statement depending on word order: "is jaq around" inverts subject and verb,
+    "jaq is right" does not.
+    """
+    text = text.strip().lower()
+    if not text:
+        return False
+    if text.endswith("?"):
+        return True
+
+    words = [w.strip("@,.!") for w in text.split()]
+    if not words:
+        return False
+    if set(words[:3]) & WH_WORDS:
+        return True
+    # Elliptical openers: "anyone know if..." is "does anyone know if...".
+    if words[0] in ("anyone", "anybody", "someone", "somebody"):
+        return True
+
+    # Drop a leading address so the inversion test sees the actual clause.
+    tokens = {w for name in my_names for w in name.split() if w.isalnum()}
+    if words[0] in tokens | {"hey", "yo", "oi"} and len(words) > 1:
+        words = words[1:]
+    return (
+        len(words) > 1
+        and words[0] in AUXILIARIES
+        and words[1] in QUESTION_SUBJECTS | tokens
+    )

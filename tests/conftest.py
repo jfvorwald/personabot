@@ -1,7 +1,7 @@
 """Shared fixtures.
 
 bot.py reads its whole configuration at import time, and two of those reads are
-`os.environ[...]` rather than `.getenv` — so importing it without a token or
+`os.environ[...]` rather than `.getenv` - so importing it without a token or
 channel raises. Everything here therefore sets a fake environment *before* the
 import, and the real .env is deliberately not loaded: tests assert against the
 documented defaults, not against whatever this machine happens to be running.
@@ -36,7 +36,7 @@ os.environ.update(
 # --- fake Discord objects ---------------------------------------------------
 #
 # The reply logic only ever reads a handful of attributes off a message. Faking
-# those is far cheaper than a real gateway connection — and the fact that this
+# those is far cheaper than a real gateway connection - and the fact that this
 # file has to exist at all is the argument for pulling the decision logic out
 # into something that takes plain values.
 

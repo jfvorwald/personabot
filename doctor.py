@@ -27,7 +27,7 @@ SEND = "--send" in sys.argv
 
 
 def ok(step: str, detail: str = "") -> bool:
-    print(f"  PASS  {step}" + (f" — {detail}" if detail else ""))
+    print(f"  PASS  {step}" + (f" - {detail}" if detail else ""))
     return True
 
 
@@ -95,7 +95,7 @@ async def check_2_anthropic() -> bool:
         msg = str(e)
         if "credit" in msg.lower() or "billing" in msg.lower():
             return fail("billing", msg, "add credits at console.anthropic.com -> Billing")
-        return fail("request", msg, "unexpected — paste this output")
+        return fail("request", msg, "unexpected - paste this output")
     except Exception as e:
         return fail(type(e).__name__, str(e), "network or API problem")
     return ok("round trip", f"{r.usage.input_tokens} in / {r.usage.output_tokens} out")
@@ -156,7 +156,7 @@ async def check_3_and_4_discord() -> bool:
                 sent = await channel.send("personabot doctor: test message, ignore.")
                 ok("send", f"posted message id {sent.id}")
             else:
-                print("  SKIP  send — re-run with --send to test posting")
+                print("  SKIP  send - re-run with --send to test posting")
 
             result["ok"] = True
         finally:

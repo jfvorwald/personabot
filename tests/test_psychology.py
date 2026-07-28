@@ -175,9 +175,12 @@ def test_psychology_file_loads(bot_module):
     assert "conditionally relevant" in bot_module.load_psychology()
 
 
-def test_missing_psychology_file_is_not_an_error(bot_module, monkeypatch):
-    monkeypatch.setattr(bot_module, "PSYCHOLOGY_FILE", "does-not-exist.md")
-    assert bot_module.load_psychology() == ""
+def test_missing_psychology_file_is_not_an_error(monkeypatch):
+    """Patched on persona, which is where the loader now reads the name."""
+    import persona
+
+    monkeypatch.setattr(persona, "PSYCHOLOGY_FILE", "does-not-exist.md")
+    assert persona.load_psychology() == ""
 
 
 def test_psychology_is_a_separate_block_from_persona(bot_module):
