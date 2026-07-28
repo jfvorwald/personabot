@@ -101,6 +101,21 @@ Rules:
 # --- storage ---------------------------------------------------------------
 
 
+def _is_excluded(user_id: str, handle: str, display: str) -> bool:
+    """Never-profile check. Ids are authoritative; names are a convenience.
+
+    A name match is offered so BRAIN_EXCLUDE is writable before you know
+    anyone's id, but it is not sufficient on its own — once someone is excluded
+    the flag is persisted against their id and honoured from then on, so a
+    rename can't quietly bring them back into scope.
+    """
+    return (
+        user_id in BRAIN_EXCLUDE
+        or handle.lower() in BRAIN_EXCLUDE
+        or display.lower() in BRAIN_EXCLUDE
+    )
+
+
 def _slug(name: str) -> str:
     s = re.sub(r"[^a-z0-9]+", "-", name.lower()).strip("-")
     return s or "unknown"
@@ -155,23 +170,32 @@ def write_profile(handle: str, display: str, generated: str, handwritten: str) -
 # --- used by bot.py --------------------------------------------------------
 
 
+_SEEN_CACHE: dict[str, str] = {}
+
+
 def note_seen(user_id: int, display_name: str, handle: str = "") -> bool:
     """Record a first encounter. Returns True if this was someone new.
 
     This is the whole of the live bot's involvement in the brain: it builds the
-    to-do list that `brain.py scan` works through. Deliberately a no-op for
-    anyone already known, so the common path touches no disk at all.
+    to-do list that `brain.py scan` works through. A no-op for anyone already
+    known — and the in-process cache is what makes that true, since the live
+    bot calls this once per message in every transcript it reads.
     """
+    key = str(user_id)
+    if _SEEN_CACHE.get(key) == display_name:
+        return False
+
     index = load_index()
     people = index.setdefault("people", {})
-    key = str(user_id)
     if key in people and people[key].get("display") == display_name:
+        _SEEN_CACHE[key] = display_name
         return False
     entry = people.setdefault(key, {})
     is_new = "handle" not in entry
     entry["handle"] = entry.get("handle") or _slug(handle or display_name)
     entry["display"] = display_name
     save_index(index)
+    _SEEN_CACHE[key] = display_name
     return is_new
 
 
@@ -281,6 +305,7 @@ async def scan(channel_id: int, force: bool) -> int:
             msgs.reverse()
 
             by_author = defaultdict(list)
+            ids_by_author = defaultdict(list)
             newest = {}
             for i, m in enumerate(msgs):
                 text = m.clean_content.strip()
@@ -293,6 +318,7 @@ async def scan(channel_id: int, force: bool) -> int:
                     if pt:
                         prev_text = f"{prev.author.display_name}: {pt[:200]}"
                 by_author[m.author.id].append((prev_text, text))
+                ids_by_author[m.author.id].append(m.id)
                 newest[m.author.id] = m.id
 
             print(f"{len(msgs)} messages, {len(by_author)} people\n")
@@ -310,7 +336,12 @@ async def scan(channel_id: int, force: bool) -> int:
                 entry["messages_observed"] = len(entries)
                 entry["is_bot"] = author.bot
 
-                if handle in BRAIN_EXCLUDE or display.lower() in BRAIN_EXCLUDE:
+                # Exclusion is sticky and keyed on the user id, never on the
+                # display name. Names change — this file already keys people by
+                # id for exactly that reason, and matching the exclude list
+                # against a name silently un-excludes someone the day they
+                # rename themselves.
+                if _is_excluded(str(uid), handle, display) or entry.get("excluded"):
                     print(f"  {display:20s} excluded")
                     entry["excluded"] = True
                     continue
@@ -319,9 +350,20 @@ async def scan(channel_id: int, force: bool) -> int:
                     skipped += 1
                     continue
 
-                last = entry.get("last_scanned_count", 0)
-                if not force and len(entries) - last < BRAIN_MIN_NEW:
-                    print(f"  {display:20s} {len(entries):5d} msgs - no new material")
+                # Count messages genuinely newer than the last scan.
+                # Comparing counts instead (len(entries) - last_count) is wrong:
+                # BRAIN_SCAN_LIMIT is a sliding window, so a person's count
+                # inside it drifts down as other people talk. The delta then
+                # never reaches BRAIN_MIN_NEW and every profile silently
+                # freezes after the first scan. Snowflake ids are monotonic, so
+                # "id greater than the last one we read" is exact.
+                since = entry.get("last_message_id") or 0
+                fresh = sum(1 for mid in ids_by_author[uid] if mid > since)
+                if not force and fresh < BRAIN_MIN_NEW:
+                    print(
+                        f"  {display:20s} {len(entries):5d} msgs - "
+                        f"only {fresh} new since last scan"
+                    )
                     continue
 
                 existing_generated, handwritten = read_profile(handle)
@@ -341,7 +383,6 @@ async def scan(channel_id: int, force: bool) -> int:
                 if not generated:
                     continue
                 path = write_profile(handle, display, generated, handwritten)
-                entry["last_scanned_count"] = len(entries)
                 entry["last_message_id"] = newest.get(uid)
                 wrote += 1
                 print(f" -> {os.path.relpath(path, HERE)}")

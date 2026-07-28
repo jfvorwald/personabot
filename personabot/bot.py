@@ -372,16 +372,21 @@ class PersonaBot(discord.Client):
         except Exception:
             log.exception("Reaction pick failed")
             return
-        if not choice or choice not in custom and choice not in standard:
+        if not choice or (choice not in custom and choice not in standard):
             return
 
+        # Claim the slot before the delay, not after. Several reaction tasks
+        # run concurrently; checking the budget and then sleeping up to
+        # REACT_DELAY_MAX before incrementing lets every one of them pass the
+        # same check and blow past the cap together.
+        self._reactions_today += 1
         await asyncio.sleep(random.uniform(REACT_DELAY_MIN, REACT_DELAY_MAX))
         try:
             await message.add_reaction(custom.get(choice, choice))
         except discord.HTTPException:
             log.exception("Could not add reaction %s", choice)
+            self._reactions_today -= 1  # hand the slot back
             return
-        self._reactions_today += 1
         self._recent_reactions.append(choice)
         log.info(
             "Reacted %s (%d/%s today)",
