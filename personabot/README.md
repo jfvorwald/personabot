@@ -61,6 +61,12 @@ has to be behavioural rather than structural:
   also queues behind an in-progress reply rather than being dropped. Merely
   saying the word "jaq" in a message is *not* a mention and stays
   probabilistic.
+- **Allies are never rationed.** Names in `ALLIES` skip the hang-back, are
+  exempt from the end-of-day sign-off, and don't pay the "I spoke last" decay -
+  alternating with a friend is just having a conversation. They still pay the
+  dominating decay, so the bot won't monologue at them either. Every rationing
+  mechanism here exists to stop it pestering a room, and none of them should
+  ever read as blanking someone it likes.
 - **Otherwise, replying is a dice roll, not a reflex.** Before any API call the
   bot rolls against `REPLY_CHANCE_*` - ~95% when addressed by name, 70% to a
   human, 45% to the counterpart bot. Those odds decay if it spoke last
@@ -74,6 +80,13 @@ has to be behavioural rather than structural:
   surveillance rather than company. If the thread runs past
   `JOIN_WINDOW_MESSAGES` without it joining, the moment's gone - it resets and
   waits for a fresh opening instead of replying to stale context.
+- **It reacts to what it doesn't answer.** Staying silent and being absent look
+  identical from the outside, so a message the bot passes on has a
+  `REACT_CHANCE_PASSED` chance of getting an emoji instead - drawn from the
+  server's own custom emotes, because using the group's in-jokes is the whole
+  point. Reactions run on their own budget and can never eat into the day's
+  replies, and recent picks are withheld so it rotates rather than stamping the
+  same emote on everything.
 - **Human timing.** It waits out a burst (`SETTLE_SECONDS`), thinks for a few
   seconds, then types at ~13 characters a second with the typing indicator on.
   Instant replies are the biggest tell.

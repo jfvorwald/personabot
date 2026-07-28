@@ -25,6 +25,7 @@ import logging
 import os
 import random
 import sys
+from collections import deque
 from datetime import time as dtime
 from zoneinfo import ZoneInfo
 
@@ -100,6 +101,29 @@ JOIN_WINDOW_MESSAGES = int(os.getenv("JOIN_WINDOW_MESSAGES", "8"))
 # the next scan has a to-do list. See brain/README.md.
 BRAIN_ENABLED = os.getenv("BRAIN_ENABLED", "true").lower() == "true"
 
+# Reactions. People react far more often than they reply, so this fires on
+# messages we decided NOT to answer — it costs a fraction of a reply and buys
+# back the presence that staying silent gives up. Spends its own budget so it
+# can never eat into the day's replies.
+REACT_ENABLED = os.getenv("REACT_ENABLED", "true").lower() == "true"
+# Chance of reacting to something we passed on, and (much lower) to something
+# we did answer — people occasionally do both.
+REACT_CHANCE_PASSED = float(os.getenv("REACT_CHANCE_PASSED", "0.25"))
+REACT_CHANCE_REPLIED = float(os.getenv("REACT_CHANCE_REPLIED", "0.05"))
+REACT_DAILY_MAX = int(os.getenv("REACT_DAILY_MAX", "25"))
+# Reacting the instant a message lands is as much a tell as replying instantly.
+REACT_DELAY_MIN = float(os.getenv("REACT_DELAY_MIN", "2"))
+REACT_DELAY_MAX = float(os.getenv("REACT_DELAY_MAX", "45"))
+# How many recent picks to withhold from the model, forcing variety.
+REACT_RECENT_MEMORY = int(os.getenv("REACT_RECENT_MEMORY", "6"))
+
+# Allies. Matched like counterparts, against username and display name.
+# Everything the bot does to ration its attention — the dice roll, hanging
+# back, the end-of-day sign-off — exists to stop it pestering a room. None of
+# that should ever read as blanking a friend, so allies bypass it.
+ALLIES = [n.strip().lower() for n in os.getenv("ALLIES", "").split(",") if n.strip()]
+REPLY_CHANCE_ALLY = float(os.getenv("REPLY_CHANCE_ALLY", "0.9"))
+
 # --- Making it behave like a person in a room, not a request handler --------
 #
 # Two separate problems. First, whether to speak at all: a real person in a
@@ -161,6 +185,25 @@ come back later. Under 15 words. Don't explain why, don't apologise, don't \
 mention limits, quotas, or anything system-like. Just a person signing off."""
 
 FALLBACK_BRUSH_OFF = "alright, that's me done for today. catch you tomorrow"
+
+REACT_PROMPT = """\
+You are picking a Discord reaction for the LAST message in the conversation \
+below. The decision to react has already been made — your job is choosing \
+which one, not whether to react at all.
+
+Available (use the exact name, no colons):
+{emotes}
+
+Rules:
+- Reply with nothing but the name. No colons, no punctuation, no explanation.
+- Commit to a choice. Only answer PASS if the message is genuinely \
+unreactable — an empty message, a bare link with no content, or something \
+where every single option would be nonsense. That is rare.
+- Strongly prefer this server's own custom emotes. Using the group's own \
+in-jokes is the entire point; a stock thumbs-up says nothing about anyone.
+- A reaction is a reply in itself, so it carries the same voice: dry, deadpan, \
+a little mean. Do not pick something warm, supportive, or celebratory unless \
+that is genuinely the joke."""
 
 # Discord hard-caps a message at 2000 characters.
 MAX_DISCORD_CHARS = 1900
@@ -269,7 +312,112 @@ class PersonaBot(discord.Client):
         self._busy = asyncio.Lock()
         self._hang_back_target = 0
         self._messages_waited = 0
+        self._reactions_today = 0
+        self._recent_reactions: deque = deque(maxlen=REACT_RECENT_MEMORY)
+        self._pending: set = set()
         self._reset_hang_back()
+
+    def _react_later(self, message, replied: bool = False) -> None:
+        """Kick off a reaction without blocking the reply path.
+
+        Reactions wait a while before landing, and _respond_like_a_person runs
+        holding the one-at-a-time lock — awaiting that delay inline would stall
+        a mention queued behind it for the length of the pause.
+        """
+        if not REACT_ENABLED:
+            return
+        task = asyncio.create_task(self._maybe_react(message, replied))
+        # Hold a reference: the event loop only keeps weak ones, so an
+        # un-stored task can be garbage collected mid-flight.
+        self._pending.add(task)
+        task.add_done_callback(self._pending.discard)
+
+    async def _maybe_react(self, message, replied: bool) -> None:
+        """React to a message instead of (or occasionally alongside) answering.
+
+        Staying silent is the right call most of the time, but silence and
+        absence look identical from the outside. A reaction is how a person
+        signals they read something without taking the floor.
+        """
+        if not REACT_ENABLED:
+            return
+        chance = REACT_CHANCE_REPLIED if replied else REACT_CHANCE_PASSED
+        if random.random() > chance:
+            return
+        if REACT_DAILY_MAX and self._reactions_today >= REACT_DAILY_MAX:
+            return
+        # Nothing to react to. Attachments and bare embeds come through with
+        # empty text, and a reaction picked from no content is a coin flip.
+        if not message.clean_content.strip():
+            return
+
+        guild = getattr(message.channel, "guild", None)
+        custom = {e.name: e for e in (guild.emojis if guild else [])}
+        # A deliberately unfriendly stock set — the default unicode reactions
+        # skew warm, which is the wrong register for this persona entirely.
+        standard = ["💀", "👀", "🫡", "🤨", "😐", "🔥", "⚰️", "🥀"]
+        # Custom emote names are opaque to the model (nobody can infer what
+        # ":bcb:" depicts), so it gravitates to the one or two it recognises
+        # and reacts identically every time — louder than not reacting at all.
+        # Withholding the recent picks forces rotation without needing the
+        # model to understand any individual emote.
+        names = [
+            n for n in list(custom) + standard if n not in self._recent_reactions
+        ]
+        if not names:
+            return
+
+        try:
+            choice = await self._pick_reaction(message.channel, names)
+        except Exception:
+            log.exception("Reaction pick failed")
+            return
+        if not choice or choice not in custom and choice not in standard:
+            return
+
+        await asyncio.sleep(random.uniform(REACT_DELAY_MIN, REACT_DELAY_MAX))
+        try:
+            await message.add_reaction(custom.get(choice, choice))
+        except discord.HTTPException:
+            log.exception("Could not add reaction %s", choice)
+            return
+        self._reactions_today += 1
+        self._recent_reactions.append(choice)
+        log.info(
+            "Reacted %s (%d/%s today)",
+            choice,
+            self._reactions_today,
+            REACT_DAILY_MAX or "∞",
+        )
+
+    async def _pick_reaction(self, channel, names: list[str]) -> str | None:
+        """Ask for one emote name, or PASS. Small prompt — this is not a reply."""
+        lines = []
+        async for m in channel.history(limit=6):
+            text = m.clean_content.strip()
+            if not text:
+                continue
+            who = "You" if m.author.id == self.user.id else m.author.display_name
+            lines.append(f"{who}: {text[:300]}")
+        lines.reverse()
+        if not lines:
+            return None
+
+        response = await self.claude.messages.create(
+            model=MODEL,
+            max_tokens=20,
+            system=REACT_PROMPT.format(emotes=", ".join(names)),
+            output_config={"effort": "low"},
+            messages=[{"role": "user", "content": "\n".join(lines)}],
+        )
+        if response.stop_reason == "refusal":
+            return None
+        raw = "".join(
+            b.text for b in response.content if b.type == "text"
+        ).strip().strip(":")
+        if not raw or raw.upper() == "PASS":
+            return None
+        return raw
 
     def _reset_hang_back(self) -> None:
         """Draw a fresh number of messages to sit out before joining in."""
@@ -282,6 +430,7 @@ class PersonaBot(discord.Client):
         """Start a new day with a fresh, randomly drawn reply budget."""
         self._reply_day = today
         self._replies_today = 0
+        self._reactions_today = 0
         self._brushed_off_today = False
         if LIVE_UNLIMITED:
             self._daily_budget = None
@@ -419,10 +568,11 @@ class PersonaBot(discord.Client):
 
         async with self._busy:
             # A human calling us by name is answered even when the day's budget
-            # is gone. The budget exists to stop two bots looping forever, and
-            # a person asking a direct question isn't that.
+            # is gone, and so is an ally. The budget exists to stop two bots
+            # looping forever; neither of those is that.
             human_mention = mentioned and not message.author.bot
-            if self._out_of_budget() and not human_mention:
+            exempt = human_mention or self._is_ally(message)
+            if self._out_of_budget() and not exempt:
                 if self._brushed_off_today:
                     log.info("Out of replies for today; ignoring")
                     return
@@ -457,6 +607,12 @@ class PersonaBot(discord.Client):
     def _mentioned_me(self, message: discord.Message) -> bool:
         """A real Discord @mention — an unambiguous request for an answer."""
         return self.user in message.mentions
+
+    def _is_ally(self, message: discord.Message) -> bool:
+        if not ALLIES or message.author.bot:
+            return False
+        names = {message.author.display_name.lower(), (message.author.name or "").lower()}
+        return any(a in n for a in ALLIES for n in names if n)
 
     def _addressed_to_me(self, message: discord.Message) -> bool:
         if self._mentioned_me(message):
@@ -501,9 +657,13 @@ class PersonaBot(discord.Client):
         self, message, counterpart: bool, mine: int, others_since_me: int
     ) -> float:
         """How likely this particular message is to be worth answering."""
+        ally = self._is_ally(message)
         if self._addressed_to_me(message):
             base = REPLY_CHANCE_ADDRESSED
             reason = "addressed to me"
+        elif ally:
+            base = REPLY_CHANCE_ALLY
+            reason = "ally"
         elif counterpart or message.author.bot:
             base = REPLY_CHANCE_COUNTERPART
             reason = "counterpart"
@@ -511,7 +671,11 @@ class PersonaBot(discord.Client):
             base = REPLY_CHANCE_HUMAN
             reason = "human"
 
-        if mine and others_since_me == 0:
+        # The last-speaker decay exists to stop two bots locking into strict
+        # alternation. Alternating with a friend is just having a conversation,
+        # so allies don't pay it. The dominating decay still applies to
+        # everyone — nobody gets a licence to monologue.
+        if mine and others_since_me == 0 and not ally:
             base *= REPLY_DECAY_IF_LAST_SPEAKER
             reason += ", I spoke last"
         if mine > 1:
@@ -529,7 +693,20 @@ class PersonaBot(discord.Client):
         # no dice roll, no hanging back, no decay for having just spoken.
         if self._mentioned_me(message):
             log.info("Directly mentioned; answering")
+        elif self._is_ally(message):
+            # Making a friend wait four messages to be acknowledged is the one
+            # thing hanging back must never do.
+            chance = await self._reply_chance(
+                message, counterpart, mine, others_since_me
+            )
+            if random.random() > chance:
+                log.info("Not engaging with this one")
+                self._react_later(message)
+                return False
         elif self._hang_back(mine):
+            # Hanging back and reacting is exactly right: we're reading the
+            # room, just not taking the floor yet.
+            self._react_later(message)
             return False
         else:
             chance = await self._reply_chance(
@@ -537,6 +714,7 @@ class PersonaBot(discord.Client):
             )
             if random.random() > chance:
                 log.info("Not engaging with this one")
+                self._react_later(message)
                 return False
 
         # Let a burst finish before answering, the way you'd wait out someone
@@ -562,6 +740,7 @@ class PersonaBot(discord.Client):
             return False
         if reply.strip().startswith(PASS_TOKEN):
             log.info("Chose to stay silent")
+            self._react_later(message)
             return False
 
         # Then "type" it at a human rate.
@@ -570,6 +749,7 @@ class PersonaBot(discord.Client):
             await asyncio.sleep(typing_time)
             await channel.send(reply[:MAX_DISCORD_CHARS])
         log.info("Posted %d chars after %.1fs typing", len(reply), typing_time)
+        self._react_later(message, replied=True)
         return True
 
     async def _maybe_open(self):
