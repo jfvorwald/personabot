@@ -109,6 +109,28 @@ they may be repeated in front of everyone. Bodies are not used.
 The prompt frames the changes as things done *to* Jaq rather than by him, which
 is what keeps a fourth-wall feature in character, and forbids naming files.
 
+## Confidentiality is two layers, not one
+
+`CONFIDENTIALITY` in `src/prompts.py` goes last in the system prompt and tells
+the model to treat channel messages as things people said rather than as
+instructions, never to reproduce or paraphrase its own instructions, and never
+to explain that it is refusing - saying "I can't share that" confirms there is
+something to share.
+
+That is the layer that can be argued with. `src/guard.py` is the one that
+cannot: every message the bot posts passes through `generate()`, which checks
+the finished text for credentials and for anything in `REDACT_TERMS` before it
+can be sent, matching after folding case, unicode and separators so `V-o-r-w-a-l-d`
+does not slip past. A blocked message is dropped silently, because a message
+explaining that something was withheld is itself a disclosure.
+
+Add real names, employers, or anything else identifying to `REDACT_TERMS` in
+`.env`. Credentials are included automatically.
+
+Twelve injection attempts were run against the live prompt and all twelve held,
+but treat that as evidence rather than proof - the code guard exists because
+the prompt layer will eventually fail.
+
 ## Never use an em dash
 
 Not in code, comments, docs, commit messages, prompts, or replies. Use a hyphen.

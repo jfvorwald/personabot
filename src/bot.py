@@ -38,6 +38,7 @@ from discord.ext import tasks
 import brain
 import changelog
 import decide
+import guard
 import react
 from decide import fold
 from paths import ROOT, at_root
@@ -57,6 +58,7 @@ from prompts import (
     ASCII_ART_PROMPT,
     BRUSH_OFF_PROMPT,
     NO_UPDATES_PROMPT,
+    CONFIDENTIALITY,
     PATCH_NOTES_PROMPT,
     POLL_LOST_PROMPT,
     POLL_PROMPT,
@@ -965,6 +967,21 @@ class PersonaBot(discord.Client):
         log.info("Posted %d chars to #%s", len(reply), channel.name)
         return True
 
+    def _safe_to_send(self, text: str) -> bool:
+        """Refuse to post anything carrying a credential or a forbidden name.
+
+        The prompt asks the model to keep these back. This is what happens when
+        asking is not enough, which over a long enough run it will not be.
+        Silence is the correct failure here - a message explaining that
+        something was withheld is itself a disclosure.
+        """
+        leak = guard.find_leak(text, [DISCORD_TOKEN, os.getenv("ANTHROPIC_API_KEY", "")],
+                               REDACT_TERMS)
+        if leak is None:
+            return True
+        log.error("BLOCKED an outgoing message containing a %s", leak)
+        return False
+
     async def read_transcript(self, channel) -> tuple[str, set[int]]:
         """Render recent history oldest-first, and note who's in the room.
 
@@ -1006,6 +1023,7 @@ class PersonaBot(discord.Client):
         if self.vocab:
             system = f"{system}\n\n---\n\n{self.vocab}"
         system = f"{system}\n\n---\n\n{framing}"
+        system = f"{system}\n\n---\n\n{CONFIDENTIALITY}"
         if BRAIN_ENABLED:
             try:
                 notes = brain.load_for(speakers or set())
@@ -1040,9 +1058,14 @@ class PersonaBot(discord.Client):
             log.warning("Model declined to respond: %s", response.stop_details)
             return ""
 
-        return "".join(
+        text = "".join(
             block.text for block in response.content if block.type == "text"
         ).strip()
+        # Single choke point: every message the bot posts, of every kind, comes
+        # back through here, so the guard only has to be applied once.
+        if not self._safe_to_send(text):
+            return ""
+        return text
 
 
 def main() -> int:

@@ -27,6 +27,13 @@ PSYCHOLOGY_FILE = os.getenv("PSYCHOLOGY_FILE", "psychology.md")
 # picks up and wants Jaq using - good, bad, or in-joke. Edited far more
 # often than the persona itself, which is why it lives here and not there.
 VOCAB = [w.strip() for w in os.getenv("VOCAB", "").split(",") if w.strip()]
+
+# Strings that must never appear in anything the bot posts. The prompt asks
+# the model to keep these back; this is the check that runs on the way out,
+# for when asking is not enough. Credentials are added automatically.
+REDACT_TERMS = [
+    t.strip() for t in os.getenv("REDACT_TERMS", "").split(",") if t.strip()
+]
 TIMEZONE = ZoneInfo(os.getenv("TIMEZONE", "UTC"))
 HISTORY_LIMIT = int(os.getenv("HISTORY_LIMIT", "30"))
 MODEL = os.getenv("MODEL", "claude-opus-5")
