@@ -82,6 +82,17 @@ IDLE_HOURS = float(os.getenv("IDLE_HOURS", "5"))
 IDLE_CHECK_MINUTES = float(os.getenv("IDLE_CHECK_MINUTES", "30"))
 IDLE_CHANCE = float(os.getenv("IDLE_CHANCE", "0.4"))
 
+# Joining a conversation already in progress. Answering the first message of a
+# thread we aren't part of reads as surveillance, not company — a person who
+# wanders over lets a few go by first. A fresh target is drawn per thread so
+# the delay isn't a countable tell.
+JOIN_AFTER_MIN = int(os.getenv("JOIN_AFTER_MIN", "2"))
+JOIN_AFTER_MAX = int(os.getenv("JOIN_AFTER_MAX", "5"))
+# Past this many messages the moment has gone: whatever we'd have said is now
+# about something two topics back. Redraw and wait for the next opening rather
+# than answer stale context.
+JOIN_WINDOW_MESSAGES = int(os.getenv("JOIN_WINDOW_MESSAGES", "8"))
+
 # --- Making it behave like a person in a room, not a request handler --------
 #
 # Two separate problems. First, whether to speak at all: a real person in a
@@ -249,6 +260,16 @@ class PersonaBot(discord.Client):
         self._daily_budget = 0
         self._brushed_off_today = False
         self._busy = asyncio.Lock()
+        self._hang_back_target = 0
+        self._messages_waited = 0
+        self._reset_hang_back()
+
+    def _reset_hang_back(self) -> None:
+        """Draw a fresh number of messages to sit out before joining in."""
+        self._messages_waited = 0
+        self._hang_back_target = random.randint(
+            max(0, JOIN_AFTER_MIN), max(0, JOIN_AFTER_MAX)
+        )
 
     def _roll_day(self, today) -> None:
         """Start a new day with a fresh, randomly drawn reply budget."""
@@ -327,6 +348,13 @@ class PersonaBot(discord.Client):
                 LIVE_COUNTERPARTS or "(none)",
                 LIVE_REPLY_TO_BOTS,
             )
+            log.info(
+                "Mentions: always answered. Joining: after %d-%d messages, "
+                "giving up past %d.",
+                JOIN_AFTER_MIN,
+                JOIN_AFTER_MAX,
+                JOIN_WINDOW_MESSAGES,
+            )
             # Draw today's budget and poke times up front, rather than waiting
             # for the first message to trigger a day-roll.
             self._roll_day(discord.utils.utcnow().astimezone(TIMEZONE).date())
@@ -372,14 +400,22 @@ class PersonaBot(discord.Client):
         if today != self._reply_day:
             self._roll_day(today)
 
+        mentioned = self._mentioned_me(message)
+
         # One at a time — otherwise fast consecutive messages race each other
-        # and the bot answers the same context twice.
-        if self._busy.locked():
+        # and the bot answers the same context twice. A direct mention queues
+        # for the lock instead of being dropped; being mid-sentence is not a
+        # reason to ignore someone who asked us a question by name.
+        if self._busy.locked() and not mentioned:
             log.info("Still writing the previous reply; skipping this one")
             return
 
         async with self._busy:
-            if self._out_of_budget():
+            # A human calling us by name is answered even when the day's budget
+            # is gone. The budget exists to stop two bots looping forever, and
+            # a person asking a direct question isn't that.
+            human_mention = mentioned and not message.author.bot
+            if self._out_of_budget() and not human_mention:
                 if self._brushed_off_today:
                     log.info("Out of replies for today; ignoring")
                     return
@@ -402,19 +438,61 @@ class PersonaBot(discord.Client):
             # Staying silent is free — only real messages spend the budget.
             if posted:
                 self._replies_today += 1
+                # We're in the conversation now; the next one starts a fresh
+                # hang-back.
+                self._reset_hang_back()
                 log.info(
                     "Replies today: %d/%s",
                     self._replies_today,
                     self._daily_budget if self._daily_budget is not None else "∞",
                 )
 
+    def _mentioned_me(self, message: discord.Message) -> bool:
+        """A real Discord @mention — an unambiguous request for an answer."""
+        return self.user in message.mentions
+
     def _addressed_to_me(self, message: discord.Message) -> bool:
-        if self.user in message.mentions:
+        if self._mentioned_me(message):
             return True
         text = message.clean_content.lower()
         return "jaq" in text or f"@{self.user.display_name.lower()}" in text
 
-    async def _reply_chance(self, message, counterpart: bool) -> float:
+    async def _recent_mix(self, message) -> tuple[int, int]:
+        """How much of the recent window is ours, and what's come since."""
+        mine = 0
+        others_since_me = 0
+        async for m in message.channel.history(limit=6, before=message):
+            if m.author.id == self.user.id:
+                mine += 1
+            elif mine == 0:
+                others_since_me += 1
+        return mine, others_since_me
+
+    def _hang_back(self, mine: int) -> bool:
+        """Should we let the others keep talking a while longer?
+
+        Only applies to conversations we aren't already in — once we've spoken,
+        the REPLY_DECAY_* multipliers handle how much we keep talking.
+        """
+        if mine:
+            return False
+        self._messages_waited += 1
+        if self._messages_waited < self._hang_back_target:
+            log.info(
+                "Hanging back (%d/%d messages)",
+                self._messages_waited,
+                self._hang_back_target,
+            )
+            return True
+        if self._messages_waited > JOIN_WINDOW_MESSAGES:
+            log.info("Ran past the join window; waiting for a fresh opening")
+            self._reset_hang_back()
+            return True
+        return False
+
+    async def _reply_chance(
+        self, message, counterpart: bool, mine: int, others_since_me: int
+    ) -> float:
         """How likely this particular message is to be worth answering."""
         if self._addressed_to_me(message):
             base = REPLY_CHANCE_ADDRESSED
@@ -426,14 +504,6 @@ class PersonaBot(discord.Client):
             base = REPLY_CHANCE_HUMAN
             reason = "human"
 
-        # How much of the recent conversation is already us?
-        mine = 0
-        others_since_me = 0
-        async for m in message.channel.history(limit=6, before=message):
-            if m.author.id == self.user.id:
-                mine += 1
-            elif mine == 0:
-                others_since_me += 1
         if mine and others_since_me == 0:
             base *= REPLY_DECAY_IF_LAST_SPEAKER
             reason += ", I spoke last"
@@ -446,10 +516,21 @@ class PersonaBot(discord.Client):
 
     async def _respond_like_a_person(self, message, counterpart: bool) -> bool:
         """Decide, wait, then answer — or quietly don't."""
-        chance = await self._reply_chance(message, counterpart)
-        if random.random() > chance:
-            log.info("Not engaging with this one")
+        mine, others_since_me = await self._recent_mix(message)
+
+        # A direct @mention is a question with our name on it. Answer it —
+        # no dice roll, no hanging back, no decay for having just spoken.
+        if self._mentioned_me(message):
+            log.info("Directly mentioned; answering")
+        elif self._hang_back(mine):
             return False
+        else:
+            chance = await self._reply_chance(
+                message, counterpart, mine, others_since_me
+            )
+            if random.random() > chance:
+                log.info("Not engaging with this one")
+                return False
 
         # Let a burst finish before answering, the way you'd wait out someone
         # firing off three messages in a row.

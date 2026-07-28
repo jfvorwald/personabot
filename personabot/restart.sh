@@ -101,8 +101,8 @@ status() {
         return 1
     fi
     echo "running  pid $pid  since $(ps -o lstart= -p "$pid" | xargs)"
-    grep -E 'Live mode:|New day|Poking|Idle openers:' "$LOG" 2>/dev/null |
-        tail -4 | sed 's/^.*personabot: /    /'
+    grep -E 'Live mode:|Mentions:|New day|Poking|Idle openers:' "$LOG" 2>/dev/null |
+        tail -5 | sed 's/^.*personabot: /    /'
     local extra
     extra=$(pgrep -cf "$PATTERN")
     [ "$extra" -gt 1 ] && echo "    WARNING: $extra instances running — run ./restart.sh"

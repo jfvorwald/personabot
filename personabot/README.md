@@ -55,12 +55,25 @@ has to be behavioural rather than structural:
 - **Other bots are ignored by default.** Only display names listed in
   `LIVE_COUNTERPARTS` get through, which is what lets the two personas talk at
   all without opening the door to every bot in the server.
-- **Replying is a dice roll, not a reflex.** Before any API call the bot rolls
-  against `REPLY_CHANCE_*` - ~95% when directly addressed, 70% to a human, 45%
-  to the counterpart bot. Those odds decay if it spoke last
+- **A direct @mention is always answered.** No dice roll, no decay, no hanging
+  back, and it's answered even after the daily budget is spent - the budget
+  guards against the two bots looping, not against you asking a question. It
+  also queues behind an in-progress reply rather than being dropped. Merely
+  saying the word "jaq" in a message is *not* a mention and stays
+  probabilistic.
+- **Otherwise, replying is a dice roll, not a reflex.** Before any API call the
+  bot rolls against `REPLY_CHANCE_*` - ~95% when addressed by name, 70% to a
+  human, 45% to the counterpart bot. Those odds decay if it spoke last
   (`REPLY_DECAY_IF_LAST_SPEAKER`) or has been dominating the recent window
   (`REPLY_DECAY_IF_DOMINATING`). Rolling client-side is cheaper and more
   decisive than asking the model to stay quiet, which it under-uses.
+- **It doesn't pounce on a conversation it isn't in.** When others are already
+  talking, the bot sits out a random `JOIN_AFTER_MIN`-`JOIN_AFTER_MAX` messages
+  before it's eligible to chime in, redrawn per thread so the delay isn't
+  countable. Answering the first message of someone else's exchange reads as
+  surveillance rather than company. If the thread runs past
+  `JOIN_WINDOW_MESSAGES` without it joining, the moment's gone - it resets and
+  waits for a fresh opening instead of replying to stale context.
 - **Human timing.** It waits out a burst (`SETTLE_SECONDS`), thinks for a few
   seconds, then types at ~13 characters a second with the typing indicator on.
   Instant replies are the biggest tell.
@@ -308,6 +321,8 @@ Run `doctor.py` first - it isolates which layer is broken.
 | Both bots post at once | You forgot to offset `POST_TIMES` |
 | Live bots ignore each other | `LIVE_COUNTERPARTS` unset or doesn't match the other bot's display name |
 | Live bot goes quiet mid-day | Daily budget spent - expected. Raise `LIVE_DAILY_MAX` |
+| Slow to join a conversation | By design - lower `JOIN_AFTER_MIN`/`MAX`, or 0/0 to disable |
+| Ignores an @mention | Shouldn't happen. Check the log for the message arriving at all - an empty `clean_content` means MESSAGE CONTENT INTENT is off |
 | Every message answered twice | Two instances running - `./restart.sh` |
 
 ## Security
