@@ -150,6 +150,15 @@ remaining failure in this feature was words next to the image - a caption, a
 description, a stage direction narrating it - and none of them survive having
 no message to write.
 
+**An ally's explicit request transcends both limits.** Not the cooldown, not
+the daily cap. Both exist to stop the channel wearing the feature out, and
+neither describes Jack asking for a specific picture; a request of his that
+silently produces nothing reads as broken, which is exactly how it read when
+"Picture intent: YES" was followed by "cooling down (507s left)". Spend is
+still counted and logged. Note the limits still bind everything else, including
+anything an ally says that is *not* a request - otherwise every conversation
+with Jack is uncapped.
+
 **Allies can ask for a picture; nobody else can.** Jack owns this thing, so
 an ally asking outright skips both the door and the dice - being told no eight
 times out of ten is the same as it not working. Every other gate still applies:

@@ -138,7 +138,10 @@ GEMINI_KEY = os.getenv("JAQ_GEMINI_KEY", "")
 # serves image generation a quota of exactly zero.
 GEMINI_IMAGE_MODEL = os.getenv("JAQ_GEMINI_IMAGE_MODEL", "gemini-3.1-flash-image")
 # The money. A picture costs orders of magnitude more than a reply, so this is
-# a hard stop rather than a target.
+# a hard stop rather than a target - for the channel. An ally asking outright
+# is exempt from this and from the cooldown: a request that silently produces
+# nothing cannot be told apart from the feature being broken. Their spend is
+# still counted and logged, so the cost stays visible.
 IMAGE_DAILY_MAX = int(os.getenv("IMAGE_DAILY_MAX", "15"))
 # The manners, and independent of the cap: without it a single back-and-forth
 # with one person can spend a whole day's pictures in ten minutes.

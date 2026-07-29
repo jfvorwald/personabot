@@ -754,11 +754,25 @@ class PersonaBot(discord.Client):
                 return ""
 
         since = time.time() - self._last_image_at if self._last_image_at else float("inf")
-        blocked = decide.image_blocked(
-            spent=self._images_today,
-            cap=IMAGE_DAILY_MAX,
-            seconds_since_last=since,
-            cooldown=IMAGE_COOLDOWN_SECONDS,
+        # Both limits exist to stop the channel wearing the feature out: the
+        # cooldown so one exchange cannot eat the day, the cap so the day
+        # cannot run up a bill. Neither describes Jack asking for a specific
+        # picture. He owns this, and a request of his that silently produces
+        # nothing is indistinguishable from the thing being broken - which is
+        # how it read, twice, with "Picture intent: YES" immediately followed
+        # by "cooling down (507s left)".
+        #
+        # Spend is still counted and still logged, so the cost stays visible.
+        # It is simply no longer a reason to refuse him.
+        blocked = (
+            None
+            if commissioned
+            else decide.image_blocked(
+                spent=self._images_today,
+                cap=IMAGE_DAILY_MAX,
+                seconds_since_last=since,
+                cooldown=IMAGE_COOLDOWN_SECONDS,
+            )
         )
         if blocked:
             # Logged at debug when nobody asked: at a ten minute cooldown that

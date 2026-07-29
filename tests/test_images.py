@@ -560,10 +560,15 @@ def test_an_ally_skips_the_dice(ready, monkeypatch, bot_module):
     assert ready._offer_image(_ally_msg("make me a picture of zack")) == "commissioned"
 
 
-def test_an_ally_cannot_conjure_spent_budget(ready, bot_module):
-    """He can ask. He cannot ask his way past the money."""
+def test_an_ally_request_transcends_a_spent_budget(ready, bot_module):
+    """Superseded by an explicit instruction: requests from Jack transcend the
+    limits. This used to assert the opposite - the cap was kept because it is
+    money - but a request that silently produces nothing is indistinguishable
+    from the feature being broken, and that is the failure that mattered."""
     ready._images_today = bot_module.IMAGE_DAILY_MAX
-    assert not ready._offer_image(_ally_msg("create a picture of a red ferrari"))
+    assert ready._offer_image(_ally_msg("create a picture of a red ferrari")) == (
+        "commissioned"
+    )
 
 
 def test_an_ally_not_asking_still_rolls(ready, monkeypatch, bot_module):
@@ -882,3 +887,47 @@ def test_the_request_is_logged(caplog):
         asyncio.run(imagegen.generate("a beige minivan", key="", model="m"))
     # No key means no request at all, and therefore nothing to log.
     assert "REQUEST" not in caplog.text
+
+
+# --- the cooldown is manners, the cap is money ------------------------------
+#
+# Live: "Picture intent: YES ... No picture offered - cooling down (507s left)"
+# twice in a row. Detection was right both times and the limiter stopped it,
+# which from the channel is indistinguishable from the feature being broken.
+
+
+def test_a_commission_ignores_the_cooldown(ready, monkeypatch, bot_module):
+    """Ten minutes between Jack's own requests reads as broken, not rationed."""
+    monkeypatch.setattr(bot_module.time, "time", lambda: 1000.0)
+    ready._last_image_at = 999.0  # one second ago
+    assert ready._offer_image(_ally_msg("draw me a dog")) == "commissioned"
+
+
+def test_an_unprompted_picture_still_waits(ready, monkeypatch, bot_module):
+    """Nobody asked, so nobody is waiting. The cooldown is what stops one
+    back-and-forth eating the room's pictures for the day."""
+    monkeypatch.setattr(bot_module.time, "time", lambda: 1000.0)
+    ready._last_image_at = 999.0
+    assert not ready._offer_image(_pic_msg("the raid went badly"))
+
+
+def test_a_commission_passes_the_daily_cap_too(ready, monkeypatch, bot_module):
+    """Jack asked for every limit to be off his own requests. Spend is still
+    counted and logged, it is just no longer a reason to refuse him."""
+    monkeypatch.setattr(bot_module.time, "time", lambda: 99999.0)
+    ready._last_image_at = 0.0
+    ready._images_today = bot_module.IMAGE_DAILY_MAX + 50
+    assert ready._offer_image(_ally_msg("draw me a dog")) == "commissioned"
+
+
+def test_the_cap_still_binds_everyone_else(ready, bot_module):
+    """The exemption is one person wide."""
+    ready._images_today = bot_module.IMAGE_DAILY_MAX
+    assert not ready._offer_image(_pic_msg("the raid went badly"))
+
+
+def test_an_ally_not_asking_still_pays_the_cap(ready, bot_module):
+    """Only an explicit request transcends the limits, not everything an ally
+    happens to say - otherwise every conversation with Jack is uncapped."""
+    ready._images_today = bot_module.IMAGE_DAILY_MAX
+    assert not ready._offer_image(_ally_msg("the raid went badly"))
