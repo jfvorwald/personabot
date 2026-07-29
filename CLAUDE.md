@@ -150,6 +150,13 @@ remaining failure in this feature was words next to the image - a caption, a
 description, a stage direction narrating it - and none of them survive having
 no message to write.
 
+**Both picture limits are per person, not per channel.** `IMAGE_PER_PERSON_MAX`
+and the cooldown are keyed on Discord user id and persisted that way. A shared
+counter meant the first person to use it up decided how many pictures everyone
+else got, and the people who lost out only ever saw a bot that stopped working.
+`IMAGE_DAILY_MAX` survives as a runaway backstop, set well above what
+per-person allows, and is not the rationing mechanism.
+
 **An ally's explicit request transcends both limits.** Not the cooldown, not
 the daily cap. Both exist to stop the channel wearing the feature out, and
 neither describes Jack asking for a specific picture; a request of his that

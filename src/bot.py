@@ -124,9 +124,14 @@ class PersonaBot(discord.Client):
         self._polls_today = 0
         self._open_polls: list[int] = []
         self._images_today = 0
+        # Per person, keyed by Discord user id as a string - a shared counter
+        # means the first person to use it up decides how many pictures
+        # everyone else gets, and they never find out why.
+        self._images_by_person: dict[str, int] = {}
         # Epoch seconds, not monotonic: the cooldown has to survive a restart,
         # and a monotonic clock restarts with the process.
         self._last_image_at = 0.0
+        self._last_image_by_person: dict[str, float] = {}
         self._recent_reactions: deque = deque(maxlen=REACT_RECENT_MEMORY)
         self._pending: set = set()
         self._reset_hang_back()
@@ -264,7 +269,9 @@ class PersonaBot(discord.Client):
                         "polls": self._polls_today,
                         "open_polls": self._open_polls,
                         "images": self._images_today,
+                        "images_by_person": self._images_by_person,
                         "last_image_at": self._last_image_at,
+                        "last_image_by_person": self._last_image_by_person,
                         "budget": self._daily_budget,
                         "brushed_off": self._brushed_off_today,
                     },
@@ -291,6 +298,8 @@ class PersonaBot(discord.Client):
         self._polls_today = state.get("polls", 0)
         self._open_polls = state.get("open_polls", [])
         self._images_today = state.get("images", 0)
+        self._images_by_person = state.get("images_by_person", {}) or {}
+        self._last_image_by_person = state.get("last_image_by_person", {}) or {}
         # Carried across the restart so redeploying is not a way to skip the
         # cooldown, the same reason the reply budget is persisted at all.
         self._last_image_at = state.get("last_image_at", 0.0)
@@ -316,6 +325,9 @@ class PersonaBot(discord.Client):
         # a process that stayed up for a week got two polls for the week.
         self._polls_today = 0
         self._images_today = 0
+        self._images_by_person = {}
+        # Deliberately NOT cleared: a picture at 23:58 should not be followed
+        # by another at 00:01 just because the date rolled.
         self._brushed_off_today = False
         if LIVE_UNLIMITED:
             self._daily_budget = None
@@ -443,8 +455,9 @@ class PersonaBot(discord.Client):
             log.info(
                 "Pictures: %s",
                 f"{GEMINI_IMAGE_MODEL}, offered on {IMAGE_BASE_RATE:.0%} of "
-                f"replies, max {IMAGE_DAILY_MAX}/day, "
-                f"{IMAGE_COOLDOWN_SECONDS:.0f}s apart"
+                f"replies, max {IMAGE_PER_PERSON_MAX or '∞'}/person/day "
+                f"({IMAGE_DAILY_MAX or '∞'} channel backstop), "
+                f"{IMAGE_COOLDOWN_SECONDS:.0f}s apart per person"
                 if IMAGE_ENABLED and imagegen.available(GEMINI_KEY)
                 else "off (no JAQ_GEMINI_KEY)"
                 if IMAGE_ENABLED
@@ -753,27 +766,38 @@ class PersonaBot(discord.Client):
                 log.info("Message is about pictures; not offering one")
                 return ""
 
-        since = time.time() - self._last_image_at if self._last_image_at else float("inf")
-        # Both limits exist to stop the channel wearing the feature out: the
-        # cooldown so one exchange cannot eat the day, the cap so the day
-        # cannot run up a bill. Neither describes Jack asking for a specific
-        # picture. He owns this, and a request of his that silently produces
-        # nothing is indistinguishable from the thing being broken - which is
-        # how it read, twice, with "Picture intent: YES" immediately followed
-        # by "cooling down (507s left)".
+        # Both limits are per person. A shared counter means the first person
+        # to use it up decides how many pictures everyone else gets, and the
+        # people who lose out never find out why - they just see a bot that
+        # stopped working. Waiting out somebody else's cooldown is the same
+        # complaint in miniature.
         #
-        # Spend is still counted and still logged, so the cost stays visible.
-        # It is simply no longer a reason to refuse him.
+        # Neither limit describes Jack asking for a specific picture, so a
+        # commission clears both. A request of his that silently produces
+        # nothing cannot be told apart from the thing being broken, which is
+        # how it read when "Picture intent: YES" was followed immediately by
+        # "cooling down (507s left)". Spend is still counted and still logged.
+        who = str(message.author.id) if message is not None else ""
+        last = self._last_image_by_person.get(who, 0.0)
+        since = time.time() - last if last else float("inf")
         blocked = (
             None
             if commissioned
             else decide.image_blocked(
-                spent=self._images_today,
-                cap=IMAGE_DAILY_MAX,
+                spent=self._images_by_person.get(who, 0),
+                cap=IMAGE_PER_PERSON_MAX,
                 seconds_since_last=since,
                 cooldown=IMAGE_COOLDOWN_SECONDS,
             )
         )
+        # An overall backstop against a runaway, not the rationing mechanism.
+        if (
+            blocked is None
+            and not commissioned
+            and IMAGE_DAILY_MAX
+            and self._images_today >= IMAGE_DAILY_MAX
+        ):
+            blocked = f"channel backstop reached ({self._images_today}/{IMAGE_DAILY_MAX})"
         if blocked:
             # Logged at debug when nobody asked: at a ten minute cooldown that
             # is the common case and would otherwise be most of the log. When
@@ -786,10 +810,11 @@ class PersonaBot(discord.Client):
         if not commissioned and random.random() > IMAGE_BASE_RATE:
             return ""
         log.info(
-            "Offering a picture on this reply%s (%d/%s spent today)",
+            "Offering a picture on this reply%s (%s has spent %d/%s today)",
             " (asked for it)" if commissioned else "",
-            self._images_today,
-            IMAGE_DAILY_MAX or "∞",
+            getattr(message.author, "display_name", "?") if message else "?",
+            self._images_by_person.get(who, 0),
+            IMAGE_PER_PERSON_MAX or "∞",
         )
         # The caller needs to know which of these it is: a commission outranks
         # the ASCII path, a rolled offer does not.
@@ -892,7 +917,9 @@ class PersonaBot(discord.Client):
         log.info("Picture context: %s", chosen.name)
         return IMAGE_CONTEXT.format(context=chosen.body)
 
-    def _send_image_later(self, channel, prompt: str, reason: str, retry=None) -> None:
+    def _send_image_later(
+        self, channel, prompt: str, reason: str, retry=None, who: str = ""
+    ) -> None:
         """Render and post a picture without blocking the reply.
 
         Generation takes tens of seconds. _respond_like_a_person holds the
@@ -900,22 +927,31 @@ class PersonaBot(discord.Client):
         behind it for the whole render - the same reason reactions are
         dispatched this way.
         """
-        task = asyncio.create_task(self._deliver_image(channel, prompt, reason, retry))
+        task = asyncio.create_task(
+            self._deliver_image(channel, prompt, reason, retry, who)
+        )
         self._pending.add(task)
         task.add_done_callback(self._pending.discard)
 
-    async def _deliver_image(self, channel, prompt: str, reason: str, retry=None) -> None:
+    async def _deliver_image(
+        self, channel, prompt: str, reason: str, retry=None, who: str = ""
+    ) -> None:
         # Claim the slot before the render, not after. Several of these can be
         # in flight at once, and checking the budget then spending a minute
         # generating lets every one of them pass the same check.
+        now = time.time()
         self._images_today += 1
-        self._last_image_at = time.time()
+        self._last_image_at = now
+        if who:
+            self._images_by_person[who] = self._images_by_person.get(who, 0) + 1
+            self._last_image_by_person[who] = now
         self._save_day()
         log.info(
-            "Generating a picture: %s | %d/%s spent today",
+            "Generating a picture: %s | %s has spent %s, channel %d",
             reason,
+            who or "?",
+            f"{self._images_by_person.get(who, 0)}/{IMAGE_PER_PERSON_MAX or '∞'}",
             self._images_today,
-            IMAGE_DAILY_MAX or "∞",
         )
 
         data = None
@@ -956,6 +992,8 @@ class PersonaBot(discord.Client):
             # should be charged for it. The cooldown stands, which stops a run
             # of content-filter refusals turning into a retry loop.
             self._images_today -= 1
+            if who and self._images_by_person.get(who):
+                self._images_by_person[who] -= 1
             self._save_day()
             log.info("No picture this time; the message went out on its own")
             return
@@ -969,6 +1007,8 @@ class PersonaBot(discord.Client):
             # the guild's upload limit. Still silent in the channel.
             log.exception("Could not upload the picture")
             self._images_today -= 1
+            if who and self._images_by_person.get(who):
+                self._images_by_person[who] -= 1
             self._save_day()
             return
         log.info("Posted a picture (%d KB)", len(data) // 1024)
@@ -1293,7 +1333,11 @@ class PersonaBot(discord.Client):
                 async def retry():
                     return await self._commission_brief(transcript, speakers, retry=True)
             self._send_image_later(
-                channel, image_prompt, reason=image_prompt[:120], retry=retry
+                channel,
+                image_prompt,
+                reason=image_prompt[:120],
+                retry=retry,
+                who=str(message.author.id),
             )
         self._react_later(message, replied=True)
         return True

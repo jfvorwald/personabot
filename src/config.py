@@ -137,14 +137,19 @@ GEMINI_KEY = os.getenv("JAQ_GEMINI_KEY", "")
 # matters until the key's project has billing on it, because the free tier
 # serves image generation a quota of exactly zero.
 GEMINI_IMAGE_MODEL = os.getenv("JAQ_GEMINI_IMAGE_MODEL", "gemini-3.1-flash-image")
-# The money. A picture costs orders of magnitude more than a reply, so this is
-# a hard stop rather than a target - for the channel. An ally asking outright
-# is exempt from this and from the cooldown: a request that silently produces
-# nothing cannot be told apart from the feature being broken. Their spend is
-# still counted and logged, so the cost stays visible.
-IMAGE_DAILY_MAX = int(os.getenv("IMAGE_DAILY_MAX", "15"))
-# The manners, and independent of the cap: without it a single back-and-forth
-# with one person can spend a whole day's pictures in ten minutes.
+# What one person can have in a day. Per-person rather than shared, for the
+# same reason replies are: a shared counter means the first person to use it up
+# decides how many pictures everybody else gets, and the people who lose out
+# never find out why.
+IMAGE_PER_PERSON_MAX = int(os.getenv("IMAGE_PER_PERSON_MAX", "5"))
+# An overall backstop against a runaway, not the rationing mechanism - set well
+# above what the per-person cap allows in normal use so it never decides
+# anything in an ordinary day. IMAGE_DAILY_MAX=0 removes it entirely.
+IMAGE_DAILY_MAX = int(os.getenv("IMAGE_DAILY_MAX", "40"))
+# Also per person. Its whole purpose is stopping one back-and-forth spending a
+# day's pictures in ten minutes, which is a fact about a person and not about
+# the channel - waiting out somebody else's cooldown is just being blocked by a
+# conversation you had no part in.
 IMAGE_COOLDOWN_SECONDS = float(os.getenv("IMAGE_COOLDOWN_SECONDS", "600"))
 # Roughly how often an eligible message is even offered the option.
 # Deliberately a number here rather than a word in the prompt: the model is a

@@ -169,8 +169,9 @@ def test_the_cap_stops_the_offer(ready, bot_module):
 
 def test_the_cooldown_stops_the_offer(ready, monkeypatch, bot_module):
     monkeypatch.setattr(bot_module.time, "time", lambda: 1000.0)
-    ready._last_image_at = 900.0  # 100s ago, cooldown is 600
-    assert not ready._offer_image(_pic_msg("the raid went badly"))
+    msg = _pic_msg("the raid went badly")
+    ready._last_image_by_person[str(msg.author.id)] = 900.0  # 100s ago, cooldown 600
+    assert not ready._offer_image(msg)
 
 
 def test_the_offer_respects_the_base_rate(ready, monkeypatch, bot_module):
@@ -905,10 +906,11 @@ def test_a_commission_ignores_the_cooldown(ready, monkeypatch, bot_module):
 
 def test_an_unprompted_picture_still_waits(ready, monkeypatch, bot_module):
     """Nobody asked, so nobody is waiting. The cooldown is what stops one
-    back-and-forth eating the room's pictures for the day."""
+    back-and-forth eating a person's pictures for the day."""
     monkeypatch.setattr(bot_module.time, "time", lambda: 1000.0)
-    ready._last_image_at = 999.0
-    assert not ready._offer_image(_pic_msg("the raid went badly"))
+    msg = _pic_msg("the raid went badly")
+    ready._last_image_by_person[str(msg.author.id)] = 999.0
+    assert not ready._offer_image(msg)
 
 
 def test_a_commission_passes_the_daily_cap_too(ready, monkeypatch, bot_module):
@@ -931,3 +933,107 @@ def test_an_ally_not_asking_still_pays_the_cap(ready, bot_module):
     happens to say - otherwise every conversation with Jack is uncapped."""
     ready._images_today = bot_module.IMAGE_DAILY_MAX
     assert not ready._offer_image(_ally_msg("the raid went badly"))
+
+
+
+# --- one person running out is not everyone running out ---------------------
+
+
+def test_one_persons_pictures_do_not_cost_anyone_else(ready, bot_module, zack):
+    """A shared counter means the first person to use it up decides how many
+    pictures everybody else gets, and they never find out why."""
+    spent = FakeMessage(FakeAuthor("wishxd", "giftxd"), "the raid went badly")
+    spent.channel = None
+    other = FakeMessage(zack, "the raid went badly")
+    other.channel = None
+
+    ready._images_by_person = {str(spent.author.id): bot_module.IMAGE_PER_PERSON_MAX}
+    assert not ready._offer_image(spent)
+    assert ready._offer_image(other) == "rolled"
+
+
+def test_one_persons_cooldown_does_not_block_anyone_else(
+    ready, bot_module, monkeypatch, zack
+):
+    """Waiting out a conversation you had no part in is the same complaint in
+    miniature."""
+    monkeypatch.setattr(bot_module.time, "time", lambda: 1000.0)
+    spent = FakeMessage(FakeAuthor("wishxd", "giftxd"), "the raid went badly")
+    spent.channel = None
+    other = FakeMessage(zack, "the raid went badly")
+    other.channel = None
+
+    ready._last_image_by_person[str(spent.author.id)] = 999.0
+    assert not ready._offer_image(spent)
+    assert ready._offer_image(other) == "rolled"
+
+
+def test_the_channel_backstop_still_exists(ready, bot_module, monkeypatch):
+    """Per-person is the rationing; this is only a runaway guard."""
+    monkeypatch.setattr(bot_module, "IMAGE_DAILY_MAX", 40)
+    ready._images_today = 40
+    assert not ready._offer_image(_pic_msg("the raid went badly"))
+
+
+def test_the_backstop_can_be_switched_off(ready, bot_module, monkeypatch):
+    monkeypatch.setattr(bot_module, "IMAGE_DAILY_MAX", 0)
+    ready._images_today = 10_000
+    assert ready._offer_image(_pic_msg("the raid went badly")) == "rolled"
+
+
+def test_a_commission_clears_the_backstop_too(ready, bot_module, monkeypatch):
+    monkeypatch.setattr(bot_module, "IMAGE_DAILY_MAX", 40)
+    ready._images_today = 10_000
+    assert ready._offer_image(_ally_msg("draw me a dog")) == "commissioned"
+
+
+def test_delivery_charges_the_person_who_asked(persona_bot, monkeypatch, bot_module):
+    async def fake_generate(prompt, **kw):
+        return b"PNG"
+
+    monkeypatch.setattr(bot_module.imagegen, "generate", fake_generate)
+    monkeypatch.setattr(bot_module, "GEMINI_KEY", "test-key")
+    asyncio.run(
+        persona_bot._deliver_image(FakeChannel(), "a dog", "r", None, who="777")
+    )
+    assert persona_bot._images_by_person["777"] == 1
+    assert persona_bot._last_image_by_person["777"] > 0
+    assert persona_bot._images_today == 1
+
+
+def test_a_failure_refunds_the_person_not_just_the_channel(
+    persona_bot, monkeypatch, bot_module
+):
+    async def fake_generate(prompt, **kw):
+        return None
+
+    monkeypatch.setattr(bot_module.imagegen, "generate", fake_generate)
+    monkeypatch.setattr(bot_module, "GEMINI_KEY", "test-key")
+    asyncio.run(
+        persona_bot._deliver_image(FakeChannel(), "a dog", "r", None, who="777")
+    )
+    assert persona_bot._images_by_person.get("777", 0) == 0
+    assert persona_bot._images_today == 0
+    # The clock still stands, so a run of refusals is not a retry loop.
+    assert persona_bot._last_image_by_person["777"] > 0
+
+
+def test_per_person_images_survive_a_restart(persona_bot, bot_module, tmp_path, monkeypatch):
+    import datetime
+
+    monkeypatch.setattr(bot_module, "STATE_FILE", str(tmp_path / "s.json"))
+    persona_bot._state_path = lambda: str(tmp_path / "s.json")
+    persona_bot._schedule_pokes = lambda today: None
+    persona_bot._save_day = bot_module.PersonaBot._save_day.__get__(persona_bot)
+
+    today = datetime.date(2026, 7, 28)
+    persona_bot._reply_day = today
+    persona_bot._images_by_person = {"111": 4}
+    persona_bot._last_image_by_person = {"111": 1234.5}
+    persona_bot._save_day()
+
+    persona_bot._images_by_person = {}
+    persona_bot._last_image_by_person = {}
+    assert persona_bot._restore_day(today) is True
+    assert persona_bot._images_by_person == {"111": 4}
+    assert persona_bot._last_image_by_person == {"111": 1234.5}
