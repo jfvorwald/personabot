@@ -33,9 +33,14 @@ SUPPORTED = {
     "image/webp": ("webp",),
 }
 
-# Anthropic's limit is larger, but a 20MB screenshot costs real latency for no
-# benefit - detail beyond this is lost to resizing anyway.
+# What the API will accept in one image block.
 MAX_BYTES = 5 * 1024 * 1024
+
+# Images are scaled to roughly this on the long edge before the model sees
+# them, so anything larger is bytes spent on detail that is discarded in
+# transit. Downscaling here is therefore free: the model sees the same picture
+# either way, and a 16MB phone screenshot fits instead of being dropped.
+MAX_EDGE = 1568
 
 
 def media_type(attachment) -> str | None:
@@ -59,6 +64,61 @@ def too_big(attachment) -> bool:
     return (getattr(attachment, "size", 0) or 0) > MAX_BYTES
 
 
+def shrink(data: bytes) -> tuple[bytes, str] | None:
+    """Fit an image inside the API's limit, or None if it cannot be read.
+
+    A 16MB screenshot used to be skipped outright, and the reply happened as
+    though nothing had been attached - so the answer was about a picture
+    nobody had seen. Downscaling costs nothing real: the API scales to roughly
+    MAX_EDGE anyway, so those bytes were never going to reach the model.
+
+    PNG first because this is usually a screenshot and text survives it
+    better; JPEG only when PNG will not fit.
+    """
+    try:
+        from PIL import Image
+    except ImportError:
+        log.warning("Pillow is not installed, so large images cannot be resized")
+        return None
+
+    import io
+
+    try:
+        img = Image.open(io.BytesIO(data))
+        img.load()
+    except Exception:
+        log.warning("Could not decode an attachment as an image", exc_info=True)
+        return None
+
+    if max(img.size) > MAX_EDGE:
+        ratio = MAX_EDGE / max(img.size)
+        img = img.resize(
+            (max(1, int(img.width * ratio)), max(1, int(img.height * ratio))),
+            Image.LANCZOS,
+        )
+
+    buffer = io.BytesIO()
+    try:
+        img.convert("RGBA" if img.mode in ("RGBA", "LA", "P") else "RGB").save(
+            buffer, format="PNG", optimize=True
+        )
+    except Exception:
+        buffer = io.BytesIO()
+    if 0 < buffer.tell() <= MAX_BYTES:
+        return buffer.getvalue(), "image/png"
+
+    # Still too big, or PNG failed. Step the quality down rather than give up.
+    for quality in (85, 70, 55, 40):
+        buffer = io.BytesIO()
+        try:
+            img.convert("RGB").save(buffer, format="JPEG", quality=quality, optimize=True)
+        except Exception:
+            return None
+        if buffer.tell() <= MAX_BYTES:
+            return buffer.getvalue(), "image/jpeg"
+    return None
+
+
 async def fetch(attachment, timeout: float = 20.0) -> dict | None:
     """Download an attachment and encode it as an image block, or return None.
 
@@ -68,13 +128,6 @@ async def fetch(attachment, timeout: float = 20.0) -> dict | None:
     """
     kind = media_type(attachment)
     if kind is None:
-        return None
-    if too_big(attachment):
-        log.info(
-            "Skipping %s: %d KB is over the limit",
-            getattr(attachment, "filename", "?"),
-            (getattr(attachment, "size", 0) or 0) // 1024,
-        )
         return None
 
     url = getattr(attachment, "url", "")
@@ -93,8 +146,26 @@ async def fetch(attachment, timeout: float = 20.0) -> dict | None:
         log.warning("Could not download an attachment", exc_info=True)
         return None
 
-    if not data or len(data) > MAX_BYTES:
+    if not data:
         return None
+
+    original = len(data)
+    if original > MAX_BYTES or kind == "image/gif":
+        shrunk = shrink(data)
+        if shrunk is None:
+            log.warning(
+                "Could not fit %s (%d KB) into the limit",
+                getattr(attachment, "filename", "?"),
+                original // 1024,
+            )
+            return None
+        data, kind = shrunk
+        log.info(
+            "Resized %s: %d KB -> %d KB",
+            getattr(attachment, "filename", "?"),
+            original // 1024,
+            len(data) // 1024,
+        )
     log.info(
         "Looking at %s (%s, %d KB)",
         getattr(attachment, "filename", "?"),
@@ -111,18 +182,41 @@ async def fetch(attachment, timeout: float = 20.0) -> dict | None:
     }
 
 
-async def blocks_for(message, limit: int = 4) -> list[dict]:
-    """Every image on a message, as API content blocks.
+async def blocks_for(message, limit: int = 4) -> tuple[list[dict], list[str]]:
+    """Every image on a message, plus the names of any that could not be read.
+
+    Both halves matter. The second exists because the first silently returning
+    fewer blocks than there were attachments is how the bot ended up answering
+    a question about a 16MB screenshot it had never seen, without mentioning
+    that it had not seen it. A gap the model is not told about is a gap the
+    model will confidently talk over.
 
     Bounded because a Discord message can carry ten attachments and a reply
     does not improve for having seen all of them.
     """
-    out = []
+    blocks, missed = [], []
     for attachment in list(getattr(message, "attachments", []) or [])[:limit]:
         block = await fetch(attachment)
         if block:
-            out.append(block)
-    return out
+            blocks.append(block)
+        else:
+            missed.append(getattr(attachment, "filename", "a file"))
+    return blocks, missed
+
+
+def unreadable_note(missed: list[str]) -> str:
+    """What to tell the model about attachments it is not getting.
+
+    Phrased so it says so rather than guessing: an answer about a picture
+    nobody looked at is worse than admitting the picture did not arrive.
+    """
+    if not missed:
+        return ""
+    return (
+        "\n\n[SYSTEM: " + ", ".join(missed) + " could not be read - wrong format, "
+        "too large, or the download failed. You cannot see it. Say so plainly "
+        "and do not guess at what it showed.]"
+    )
 
 
 def describes_attachments(message) -> str:

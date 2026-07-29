@@ -116,6 +116,66 @@ def test_no_images_leaves_a_plain_string(bot_module):
     assert bot_module._with_images("just talking", None) == "just talking"
 
 
+# --- a gap it cannot see must be reported, not talked over ------------------
+
+
+def test_unreadable_attachments_are_named():
+    """A 16MB screenshot was skipped and the reply happened as though nothing
+    had been attached - so the answer was about a picture nobody had seen."""
+    note = vision.unreadable_note(["image.png"])
+    assert "image.png" in note
+    assert "You cannot see it" in note
+    assert "do not guess" in note
+
+
+def test_nothing_unreadable_adds_nothing():
+    assert vision.unreadable_note([]) == ""
+
+
+def test_blocks_for_reports_what_it_could_not_read():
+    message = types.SimpleNamespace(
+        attachments=[_attachment("report.pdf", "application/pdf")]
+    )
+    blocks, missed = asyncio.run(vision.blocks_for(message))
+    assert blocks == []
+    assert missed == ["report.pdf"]
+
+
+def test_blocks_for_on_a_message_with_nothing_attached():
+    blocks, missed = asyncio.run(
+        vision.blocks_for(types.SimpleNamespace(attachments=[]))
+    )
+    assert blocks == [] and missed == []
+
+
+# --- oversized images are resized, not dropped ------------------------------
+
+
+def test_a_large_image_is_shrunk_to_fit():
+    """The API scales to roughly MAX_EDGE anyway, so those bytes were never
+    going to reach the model - dropping them was pure loss."""
+    pytest.importorskip("PIL")
+    import io
+
+    from PIL import Image
+
+    big = Image.new("RGB", (6000, 4000), (200, 30, 30))
+    raw = io.BytesIO()
+    big.save(raw, format="PNG")
+    data = raw.getvalue()
+
+    shrunk = vision.shrink(data)
+    assert shrunk is not None
+    payload, kind = shrunk
+    assert len(payload) <= vision.MAX_BYTES
+    assert kind in ("image/png", "image/jpeg")
+    assert max(Image.open(io.BytesIO(payload)).size) <= vision.MAX_EDGE
+
+
+def test_shrink_rejects_something_that_is_not_an_image():
+    assert vision.shrink(b"this is not a picture") is None
+
+
 # --- the forensic instruction -----------------------------------------------
 
 

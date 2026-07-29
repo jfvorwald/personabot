@@ -721,7 +721,9 @@ class PersonaBot(discord.Client):
                 # audience is the person waiting.
                 await asyncio.sleep(random.uniform(DM_THINK_MIN, DM_THINK_MAX))
                 transcript, speakers = await self.read_transcript(message.channel)
-                looking_at = await vision.blocks_for(message)
+                looking_at, unreadable = await vision.blocks_for(message)
+                if unreadable:
+                    transcript += vision.unreadable_note(unreadable)
                 image_mode = self._offer_image(
                     message,
                     await self._asks_for_a_picture(transcript, message.clean_content),
@@ -1482,9 +1484,14 @@ class PersonaBot(discord.Client):
             # art are each already a bit with its own shape, and stacking two
             # on one message is a bot showing off what it can do.
             commissioned = image_mode == "commissioned"
+            channel_images, unreadable = await vision.blocks_for(message)
+            if unreadable:
+                # Never answer as though it saw something it did not. A gap the
+                # model is not told about is a gap it will talk over.
+                transcript += vision.unreadable_note(unreadable)
             reply = await self.generate(
                 transcript,
-                images=await vision.blocks_for(message),
+                images=channel_images,
                 may_stay_silent=not commissioned,
                 speakers=speakers,
                 offer_image=offered_image,
