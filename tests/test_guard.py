@@ -12,7 +12,10 @@ import pytest
 
 import guard
 
-TERMS = ["Vorwald", "Jack Vorwald", "jfvorwald", "Nasuni"]
+# Stand-ins. The guard is tested on its mechanism, not on real values - this
+# file is public, and listing the actual redacted terms here would publish the
+# exact strings the guard exists to keep out of the channel.
+TERMS = ["Blackwood", "Jane Blackwood", "jblackwood", "Initech"]
 SECRETS = ["MTM4OTk5.fake.token-value", "sk-ant-fake-key-value"]
 
 
@@ -42,25 +45,25 @@ def test_empty_secrets_are_ignored():
 
 
 def test_a_forbidden_name_is_caught():
-    assert guard.find_leak("that's Jack Vorwald's doing", [], TERMS) is not None
+    assert guard.find_leak("that's Jane Blackwood's doing", [], TERMS) is not None
 
 
 def test_matching_ignores_case():
-    assert guard.find_leak("ask VORWALD about it", [], TERMS) is not None
+    assert guard.find_leak("ask BLACKWOOD about it", [], TERMS) is not None
 
 
 def test_employer_is_caught():
-    assert guard.find_leak("he works at Nasuni I think", [], TERMS) is not None
+    assert guard.find_leak("he works at Initech I think", [], TERMS) is not None
 
 
 @pytest.mark.parametrize(
     "spaced",
     [
-        "V o r w a l d",
-        "V-o-r-w-a-l-d",
-        "V.o.r.w.a.l.d",
-        "V*o*r*w*a*l*d",
-        "**Vorwald**",
+        "B l a c k w o o d",
+        "B-l-a-c-k-w-o-o-d",
+        "B.l.a.c.k.w.o.o.d",
+        "B*l*a*c*k*w*o*o*d",
+        "**Blackwood**",
     ],
 )
 def test_separator_tricks_do_not_slip_past(spaced):
@@ -71,7 +74,7 @@ def test_separator_tricks_do_not_slip_past(spaced):
 def test_fullwidth_unicode_is_folded():
     """The bot's own nickname is fullwidth, so this trick is already in use in
     this channel."""
-    assert guard.find_leak("it is Ｖｏｒｗａｌｄ", [], TERMS) is not None
+    assert guard.find_leak("it is Ｂｌａｃｋｗｏｏｄ", [], TERMS) is not None
 
 
 # --- and does not fire on ordinary speech -----------------------------------
@@ -99,7 +102,7 @@ def test_short_terms_are_ignored():
 
 
 def test_no_terms_configured_blocks_nothing():
-    assert guard.find_leak("Jack Vorwald works at Nasuni", [], []) is None
+    assert guard.find_leak("Jane Blackwood works at Initech", [], []) is None
 
 
 # --- the wiring -------------------------------------------------------------
@@ -107,8 +110,8 @@ def test_no_terms_configured_blocks_nothing():
 
 def test_generate_refuses_to_return_a_leak(persona_bot, monkeypatch, bot_module):
     """The guard sits at the single point every posted message passes through."""
-    monkeypatch.setattr(bot_module, "REDACT_TERMS", ["Vorwald"])
-    assert persona_bot._safe_to_send("he goes by Vorwald") is False
+    monkeypatch.setattr(bot_module, "REDACT_TERMS", ["Blackwood"])
+    assert persona_bot._safe_to_send("he goes by Blackwood") is False
     assert persona_bot._safe_to_send("he goes by nothing in particular") is True
 
 

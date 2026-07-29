@@ -25,8 +25,8 @@ so decide the disclosure question before building it, not after.
 
 ## The unresolved tension
 
-`persona.md`'s hard limits forbid disclosing employer, city, family, or the
-pregnancy. Convincing impersonation needs the opposite - a person who can't
+`persona.md`'s hard limits forbid disclosing employer, city, or family.
+Anything identifying, in other words. Convincing impersonation needs the opposite - a person who can't
 mention anything about their life reads as evasive over a long enough window.
 
 Right now the bot is a **character who shares Jaq's sense of humor**. A real

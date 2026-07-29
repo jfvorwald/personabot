@@ -323,7 +323,8 @@ this repo is public. Check `git diff --cached --name-only` before committing.
 ## The privacy rule
 
 `persona.md` carries hard limits: no real names, employer, city, family
-members, or the pregnancy. **Brain profiles are bound by the same limits**,
+members, or anything else identifying. **Brain profiles are bound by the same
+limits**,
 because they are assembled into the same system prompt.
 
 This has already failed once. An excluded account was profiled anyway after its

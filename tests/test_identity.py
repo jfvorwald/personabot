@@ -163,6 +163,23 @@ def test_creator_profile_defers_without_fawning():
 
 
 def test_creator_profile_holds_no_identifying_details():
+    """The terms come from REDACT_TERMS in the gitignored .env, never from here.
+
+    This test used to list them literally - a partner's name, a child's name,
+    an employer - which published the exact strings it exists to keep out, in
+    a public repo, next to a real name. A privacy test that leaks is worse
+    than no test.
+    """
+    import os
+
+    from dotenv import dotenv_values
+
+    root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    configured = dotenv_values(os.path.join(root, ".env")).get("REDACT_TERMS") or ""
+    terms = [t.strip().lower() for t in configured.split(",") if t.strip()]
+    if not terms:
+        pytest.skip("no REDACT_TERMS configured; nothing to check against")
+
     body = open("brain/people/jaqsup.md").read().lower()
-    for term in ("jenna", "nora", "nasuni", "pregnan", "expecting"):
-        assert term not in body, f"{term!r} must never be in a profile"
+    for term in terms:
+        assert term not in body, "a redacted term must never be in a profile"

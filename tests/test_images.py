@@ -347,8 +347,8 @@ def test_an_unprompted_directive_is_dropped(persona_bot, bot_module, monkeypatch
 def test_a_leaky_image_prompt_is_refused(persona_bot, monkeypatch, bot_module):
     """The prompt leaves this machine for a third party, so it gets the same
     check every posted message gets."""
-    monkeypatch.setattr(bot_module, "REDACT_TERMS", ["Vorwald"])
-    assert persona_bot._image_prompt_is_safe("a man called Vorwald") is False
+    monkeypatch.setattr(bot_module, "REDACT_TERMS", ["Blackwood"])
+    assert persona_bot._image_prompt_is_safe("a man called Blackwood") is False
     assert persona_bot._image_prompt_is_safe("a burnt out car") is True
 
 

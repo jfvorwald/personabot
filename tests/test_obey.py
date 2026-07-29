@@ -155,8 +155,8 @@ def test_an_order_cannot_reach_the_hard_limits():
 def test_the_guard_still_applies_under_an_order(persona_bot, monkeypatch, bot_module):
     """The real enforcement. Whatever the model was told to do, a message
     carrying a forbidden term still does not get posted."""
-    monkeypatch.setattr(bot_module, "REDACT_TERMS", ["Vorwald"])
-    assert persona_bot._safe_to_send("he goes by Vorwald") is False
+    monkeypatch.setattr(bot_module, "REDACT_TERMS", ["Blackwood"])
+    assert persona_bot._safe_to_send("he goes by Blackwood") is False
 
 
 def test_an_order_replaces_the_silence_option():
