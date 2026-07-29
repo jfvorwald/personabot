@@ -207,6 +207,22 @@ are tracked; every other file there is gitignored, like `persona.md`, because
 they describe a specific group's in-jokes. Two gates on purpose: a context that
 fires every time it matches gives the channel a house style nobody chose.
 
+## Self improvement proposes, it never applies
+
+`src/improve.py` measures what the model cannot see about itself - a reply is a
+fresh single-turn call with no memory of the last forty, so a tic is invisible
+from the inside. The live bot appends one cheap line per decision to
+`improvements/observations.jsonl` (no API call). `tools/improve.py` aggregates
+daily and writes proposals. **Nothing there ever takes effect** - same contract
+as `brain.py`. Surface new proposals to Jack in chat; he approves or corrects.
+
+Everything under `improvements/` except the README is gitignored: it is derived
+from a private channel and it describes how Jaq works.
+
+The fitness signal is the humans in the room, not the counterpart bot. Two bots
+optimising against each other drift somewhere nobody else enjoys, and neither
+of them can tell.
+
 ## Commit messages are read out loud
 
 When someone in the channel asks for an update, the bot answers with patch

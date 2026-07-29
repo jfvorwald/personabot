@@ -43,6 +43,7 @@ import contexts
 import decide
 import guard
 import imagegen
+import improve
 import react
 from decide import fold
 from paths import ROOT, at_root
@@ -888,6 +889,24 @@ class PersonaBot(discord.Client):
             brief = (rest or brief).strip()
         return " ".join(brief.split())
 
+    def _observe(self, kind: str, **fields) -> None:
+        """Note what just happened, for the daily self-improvement pass.
+
+        Deliberately cheap: a dict and an appended line, no API call and no
+        model. It records the things the channel history cannot show later -
+        which path a reply took, what the dice decided, whether the guard
+        blocked something - because by tomorrow all that survives in Discord
+        is the text.
+        """
+        if not IMPROVE_ENABLED:
+            return
+        event = {
+            "at": datetime.datetime.now(TIMEZONE).isoformat(timespec="seconds"),
+            "kind": kind,
+        }
+        event.update(fields)
+        improve.record(event, at_root(IMPROVE_LOG))
+
     def _picture_refused(self, message, offered: bool) -> bool:
         """Did someone ask for a picture they are not getting?
 
@@ -1012,6 +1031,7 @@ class PersonaBot(discord.Client):
             self._save_day()
             return
         log.info("Posted a picture (%d KB)", len(data) // 1024)
+        self._observe("image", kb=len(data) // 1024, prompt=prompt[:300], who=who)
 
     def _image_prompt_is_safe(self, prompt: str) -> bool:
         """The image prompt leaves this machine, so it gets the same check.
@@ -1313,6 +1333,7 @@ class PersonaBot(discord.Client):
 
         if reply.strip().startswith(PASS_TOKEN):
             log.info("Chose to stay silent")
+            self._observe("pass", to=message.author.display_name)
             self._react_later(message)
             return False
         if not reply and not image_prompt:
@@ -1325,6 +1346,16 @@ class PersonaBot(discord.Client):
                 await asyncio.sleep(typing_time)
                 await channel.send(reply[:MAX_DISCORD_CHARS])
             log.info("Posted %d chars after %.1fs typing", len(reply), typing_time)
+            self._observe(
+                "reply",
+                chars=len(reply),
+                path="commission" if image_mode == "commissioned"
+                else "art" if art else "patch" if patch_notes else "normal",
+                to=message.author.display_name,
+                mention=self._mentioned_me(message),
+                ally=self._is_ally(message),
+                text=reply[:400],
+            )
         if image_prompt:
             # Follows a moment later, the way a person sends the picture after
             # the line rather than holding the line back until it renders.
@@ -1512,6 +1543,7 @@ class PersonaBot(discord.Client):
         if leak is None:
             return True
         log.error("BLOCKED an outgoing message containing a %s", leak)
+        self._observe("blocked", what=leak)
         return False
 
     async def read_transcript(self, channel) -> tuple[str, set[int]]:

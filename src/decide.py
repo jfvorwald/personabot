@@ -256,6 +256,19 @@ PICTURE_VERBS = {
 }
 
 
+# Phrasings that mean "draw this" without naming a picture at all. Jack asks
+# this way constantly and it matched nothing: no verb from the list, no noun
+# from the list. Handled here rather than left to the classifier so it is
+# deterministic - a phrase he uses on purpose should not depend on a model
+# agreeing with him about it.
+PICTURE_PHRASES = (
+    "imagine yourself", "imagine you as", "imagine you in", "imagine you're",
+    "imagine youre", "imagine us", "picture yourself", "picture this",
+    "what would it look like", "what would that look like",
+    "what would you look like", "i want to see", "let me see",
+)
+
+
 def is_picture_request(text: str) -> bool:
     """Is someone asking for a picture?
 
@@ -268,6 +281,8 @@ def is_picture_request(text: str) -> bool:
     lowered = text.strip().lower()
     if not lowered:
         return False
+    if any(phrase in lowered for phrase in PICTURE_PHRASES):
+        return True
     words = [w.strip("?!.,:;\"'") for w in lowered.split()]
     blockers = WH_WORDS | AUXILIARIES | {
         "someone", "anyone", "if", "that", "the", "this", "these", "those",

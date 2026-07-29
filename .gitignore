@@ -19,6 +19,13 @@ contexts/*.md
 !contexts/example.md
 !contexts/README.md
 
+# Self improvement. Observations and proposals are derived from a private
+# channel and describe how Jaq works - the same two reasons persona.md and the
+# brain are not shared. The README and the tooling are.
+improvements/observations.jsonl
+improvements/log/
+improvements/PROPOSALS.md
+
 .venv/
 __pycache__/
 *.log

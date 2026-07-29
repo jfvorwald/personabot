@@ -1037,3 +1037,32 @@ def test_per_person_images_survive_a_restart(persona_bot, bot_module, tmp_path, 
     assert persona_bot._restore_day(today) is True
     assert persona_bot._images_by_person == {"111": 4}
     assert persona_bot._last_image_by_person == {"111": 1234.5}
+
+
+# --- the phrasings Jack actually uses ---------------------------------------
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "imagine yourself in azeroth",
+        "@Agentic Jaq imagine yourself as a tauren",
+        "imagine you as a raid boss",
+        "picture yourself losing to a goose",
+        "what would you look like with a beard",
+        "i want to see ben in a bathrobe",
+    ],
+)
+def test_the_phrases_jack_uses_are_requests(text):
+    """These named no picture and no listed verb, so they matched nothing.
+    Handled deterministically rather than left to the classifier: a phrasing
+    he uses on purpose should not depend on a model agreeing about it."""
+    assert decide.is_picture_request(text) is True
+
+
+def test_imagine_yourself_commissions_for_an_ally(ready):
+    assert ready._offer_image(_ally_msg("imagine yourself in azeroth")) == "commissioned"
+
+
+def test_imagine_yourself_still_gets_a_stranger_nothing(ready):
+    assert ready._offer_image(_pic_msg("imagine yourself in azeroth")) != "commissioned"

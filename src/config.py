@@ -171,6 +171,12 @@ POLL_DAILY_MAX = int(os.getenv("POLL_DAILY_MAX", "2"))
 POLL_CHANCE = float(os.getenv("POLL_CHANCE", "0.35"))
 POLL_HOURS = int(os.getenv("POLL_HOURS", "4"))
 
+# Self improvement. The live bot appends one cheap line per decision - no API
+# call, no model - and an offline tool aggregates them daily into proposals for
+# Jack to approve. Nothing here ever changes behaviour on its own.
+IMPROVE_ENABLED = os.getenv("IMPROVE_ENABLED", "true").lower() == "true"
+IMPROVE_LOG = os.getenv("IMPROVE_LOG", "improvements/observations.jsonl")
+
 # Where the day's spend is kept so it survives a restart. Without this the
 # budget only ever bounds a single process: deploying re-draws it and zeroes
 # the counters, so a day with ten deploys has no effective cap at all.
