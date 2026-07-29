@@ -68,6 +68,9 @@ from prompts import (
     POLL_PROMPT,
     FALLBACK_BRUSH_OFF,
     FRAMING,
+    IMAGE_BRIEF_PROMPT,
+    IMAGE_BRIEF_RETRY,
+    IMAGE_COMMISSIONED,
     IMAGE_CONTEXT,
     IMAGE_DECLINED,
     IMAGE_OPTION,
@@ -763,6 +766,31 @@ class PersonaBot(discord.Client):
         # the ASCII path, a rolled offer does not.
         return "commissioned" if commissioned else "rolled"
 
+    async def _commission_brief(self, transcript: str, speakers, retry: bool = False) -> str:
+        """Ask for the picture's description on its own.
+
+        A commission cannot depend on the model volunteering a `<<image:>>`
+        line inside a chat message. It declined to, twice - once because the
+        affordance it was shown opens with "usually don't" - and the person who
+        asked got an ordinary sentence and no picture.
+
+        So for an explicit request the description is its own call with its own
+        instruction, and the only way it produces nothing is a refusal or the
+        guard. Costs one extra Anthropic call on a path that is ally-only and
+        rate-limited, which is the right thing to spend to make it reliable.
+        """
+        instruction = IMAGE_BRIEF_PROMPT + (IMAGE_BRIEF_RETRY if retry else "")
+        brief = await self.generate(
+            transcript, instruction=instruction, speakers=speakers
+        )
+        # It was asked for a description and nothing else, but a stray "Sure -"
+        # or a wrapping quote is cheap to survive.
+        brief = brief.strip().strip('"').strip()
+        if brief.lower().startswith(("sure", "here", "okay", "ok,")):
+            _, _, rest = brief.partition(":")
+            brief = (rest or brief).strip()
+        return " ".join(brief.split())
+
     def _picture_refused(self, message, offered: bool) -> bool:
         """Did someone ask for a picture they are not getting?
 
@@ -792,7 +820,7 @@ class PersonaBot(discord.Client):
         log.info("Picture context: %s", chosen.name)
         return IMAGE_CONTEXT.format(context=chosen.body)
 
-    def _send_image_later(self, channel, prompt: str, reason: str) -> None:
+    def _send_image_later(self, channel, prompt: str, reason: str, retry=None) -> None:
         """Render and post a picture without blocking the reply.
 
         Generation takes tens of seconds. _respond_like_a_person holds the
@@ -800,11 +828,11 @@ class PersonaBot(discord.Client):
         behind it for the whole render - the same reason reactions are
         dispatched this way.
         """
-        task = asyncio.create_task(self._deliver_image(channel, prompt, reason))
+        task = asyncio.create_task(self._deliver_image(channel, prompt, reason, retry))
         self._pending.add(task)
         task.add_done_callback(self._pending.discard)
 
-    async def _deliver_image(self, channel, prompt: str, reason: str) -> None:
+    async def _deliver_image(self, channel, prompt: str, reason: str, retry=None) -> None:
         # Claim the slot before the render, not after. Several of these can be
         # in flight at once, and checking the budget then spending a minute
         # generating lets every one of them pass the same check.
@@ -828,6 +856,28 @@ class PersonaBot(discord.Client):
             )
         except Exception:
             log.exception("Image generation raised")
+
+        if not data and retry is not None:
+            # The image model refuses some briefs outright. On a commission
+            # somebody is waiting for a picture, so a refusal gets exactly one
+            # more attempt at a version that survives the filter.
+            log.info("Refused; asking for a tamer brief and trying once more")
+            try:
+                second = await retry()
+            except Exception:
+                log.exception("Retry brief failed")
+                second = ""
+            if second and self._image_prompt_is_safe(second):
+                log.info("Retry brief: %s", second[:120])
+                try:
+                    data = await imagegen.generate(
+                        second,
+                        key=GEMINI_KEY,
+                        model=GEMINI_IMAGE_MODEL,
+                        timeout=IMAGE_TIMEOUT,
+                    )
+                except Exception:
+                    log.exception("Image generation raised on retry")
 
         if not data:
             # Hand the daily slot back - nothing was produced, so nothing
@@ -1077,25 +1127,53 @@ class PersonaBot(discord.Client):
             # Only ordinary replies can carry a picture. Patch notes and ASCII
             # art are each already a bit with its own shape, and stacking two
             # on one message is a bot showing off what it can do.
+            commissioned = image_mode == "commissioned"
             reply = await self.generate(
                 transcript,
-                may_stay_silent=True,
+                may_stay_silent=not commissioned,
                 speakers=speakers,
                 offer_image=offered_image,
                 refuse_image=self._picture_refused(message, offered_image),
+                commissioned=commissioned,
             )
-        if not reply:
-            return False
-
         # Always strip, even when nothing was offered: models reuse a syntax
         # they have been shown, and "<<image: a dog>>" in the channel would put
         # the machinery in front of everyone.
         reply, image_prompt = decide.extract_image_prompt(reply)
+
+        if image_mode == "commissioned" and not image_prompt:
+            # The whole point of a commission: it does not depend on the model
+            # deciding to attach something. It was asked for, so it happens.
+            image_prompt = await self._commission_brief(transcript, speakers)
+            if image_prompt:
+                log.info("Commissioned brief: %s", image_prompt[:120])
+            else:
+                log.warning("Commissioned a picture but got no brief back")
+
+        if not reply and not image_prompt:
+            return False
+
+        if image_mode == "commissioned" and image_prompt:
+            # Someone asked for a picture, so they get a picture and nothing
+            # else. Every remaining failure in this feature has been the model
+            # putting words next to the image - a caption, a description, a
+            # stage direction narrating it - and none of those survive having
+            # no message to write. The picture is the reply.
+            if reply:
+                log.info("Commissioned: posting the picture on its own")
+            reply = ""
         if image_prompt and not offered_image:
             log.info("Model asked for a picture unprompted; dropping it")
             image_prompt = ""
         if image_prompt and not self._image_prompt_is_safe(image_prompt):
             image_prompt = ""
+        if image_prompt and reply:
+            # Discord shows the picture; narrating it is a bot describing its
+            # own output, and the instruction not to has not held.
+            trimmed = decide.strip_attachment_notes(reply)
+            if trimmed != reply:
+                log.info("Stripped an attachment announcement from the reply")
+                reply = trimmed
         if image_prompt and reply and decide.looks_like_a_caption(reply, image_prompt):
             # He wrote the art direction out loud instead of saying something.
             # The picture is the good half, so send that on its own - which is
@@ -1120,7 +1198,13 @@ class PersonaBot(discord.Client):
         if image_prompt:
             # Follows a moment later, the way a person sends the picture after
             # the line rather than holding the line back until it renders.
-            self._send_image_later(channel, image_prompt, reason=image_prompt[:120])
+            retry = None
+            if image_mode == "commissioned":
+                async def retry():
+                    return await self._commission_brief(transcript, speakers, retry=True)
+            self._send_image_later(
+                channel, image_prompt, reason=image_prompt[:120], retry=retry
+            )
         self._react_later(message, replied=True)
         return True
 
@@ -1331,9 +1415,12 @@ class PersonaBot(discord.Client):
         speakers: set[int] | None = None,
         offer_image: bool = False,
         refuse_image: bool = False,
+        commissioned: bool = False,
     ) -> str:
         framing = FRAMING + (SILENCE_OPTION if may_stay_silent else "")
-        if offer_image:
+        if commissioned:
+            framing += IMAGE_COMMISSIONED
+        elif offer_image:
             framing += IMAGE_OPTION + self._image_context(transcript)
         elif refuse_image:
             framing += IMAGE_DECLINED

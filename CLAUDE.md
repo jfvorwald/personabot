@@ -131,6 +131,16 @@ win.** `_art_instruction` runs first and returns early, so an ally asking
 was configured, funded, and simply never asked. A commission now outranks
 ASCII; a rolled offer does not, and asking for ASCII by name still gets ASCII.
 
+**A commission never depends on the model volunteering a directive.** It
+declined twice live - once because `IMAGE_OPTION` opens with "usually don't",
+which is right for an unprompted picture and fatal for a requested one. So a
+commission gets `IMAGE_COMMISSIONED` instead, asks for the description in its
+own call (`IMAGE_BRIEF_PROMPT`), retries once with a *different subject* when
+the image model refuses, and **posts the picture with no text at all**. Every
+remaining failure in this feature was words next to the image - a caption, a
+description, a stage direction narrating it - and none of them survive having
+no message to write.
+
 **Allies can ask for a picture; nobody else can.** Jack owns this thing, so
 an ally asking outright skips both the door and the dice - being told no eight
 times out of ten is the same as it not working. Every other gate still applies:

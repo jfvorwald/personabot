@@ -376,6 +376,42 @@ def extract_image_prompt(text: str) -> tuple[str, str]:
     return "\n".join(line.rstrip() for line in cleaned.splitlines()).strip(), prompt
 
 
+# "*[image attached]*", "*picture attached*", "(image)". The prompt forbids
+# announcing the picture and the model does it anyway, so this is the version
+# that holds. Deliberately narrow: it needs an attach-ish word inside a
+# bracket, asterisk or paren wrapper, or a whole line that is nothing else.
+_ATTACH_SPAN = re.compile(
+    r"[\*_\[\(]+[^\]\)\*_\n]{0,40}?(?:attach\w*|image|picture|pic|photo)"
+    r"[^\]\)\*_\n]{0,40}?[\*_\]\)]+",
+    re.IGNORECASE,
+)
+_ATTACH_LINE = re.compile(
+    r"^\W*(?:image|picture|pic|photo)\s+attach\w*\W*$|"
+    r"^\W*attach\w*\s*:?\s*(?:image|picture|pic|photo)?\W*$",
+    re.IGNORECASE,
+)
+
+
+def strip_attachment_notes(text: str) -> str:
+    """Remove the model announcing its own attachment.
+
+    A picture arriving needs no narration - Discord shows it. "*[image
+    attached]*" above a real image reads as a bot describing its own output,
+    and above a failed one it is a promise of something that never comes.
+    """
+    if not text:
+        return text
+    kept = []
+    for line in text.splitlines():
+        if _ATTACH_LINE.match(line.strip()):
+            continue
+        cleaned = _ATTACH_SPAN.sub("", line) if "attach" in line.lower() else line
+        kept.append(cleaned.rstrip())
+    # Collapse the blank line the removal usually leaves behind.
+    out = "\n".join(kept)
+    return re.sub(r"\n{2,}", "\n\n", out).strip()
+
+
 def image_blocked(
     *,
     spent: int,

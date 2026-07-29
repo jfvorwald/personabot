@@ -651,3 +651,120 @@ def test_a_rolled_offer_does_not_suppress_ascii(ready, monkeypatch, bot_module):
     """Only a commission outranks ASCII. An ordinary rolled offer does not,
     or every trivial-question diagram would silently become a render."""
     assert ready._offer_image(_pic_msg("the raid went badly")) == "rolled"
+
+
+# --- a commission does not depend on the model volunteering -----------------
+#
+# Twice live, an ally asked for a picture, the code routed correctly, and the
+# model simply did not emit a directive - once because the affordance it was
+# shown opens with "usually don't". Both times the person who asked got a
+# sentence and no picture.
+
+
+def test_the_commission_block_does_not_say_usually_dont():
+    """IMAGE_OPTION is right for an unprompted picture and wrong here: being
+    told to make one and to usually decline in the same breath is why two
+    commissions came back as ordinary lines."""
+    assert "Usually don't" not in prompts.IMAGE_COMMISSIONED
+    assert "already decided" in prompts.IMAGE_COMMISSIONED
+
+
+def test_the_commission_block_forbids_narrating_the_picture():
+    body = prompts.IMAGE_COMMISSIONED
+    assert "Do NOT describe what it shows" in body
+    assert "do not announce it" in body
+
+
+def test_the_brief_prompt_asks_for_a_description_only():
+    body = prompts.IMAGE_BRIEF_PROMPT
+    assert "description ONLY" in body
+    assert "Never just \nrepeat their wording" in body or "Never just" in body
+
+
+def test_the_retry_demands_a_different_subject():
+    """A reworded version of a refused brief gets refused again - seen with a
+    starving dog described two ways."""
+    assert "completely different one" in prompts.IMAGE_BRIEF_RETRY
+    assert "Do not reuse the subject" in prompts.IMAGE_BRIEF_RETRY
+
+
+# --- the model narrating its own attachment ---------------------------------
+
+
+@pytest.mark.parametrize(
+    "text,expected",
+    [
+        ("*[image attached]*\n\nthere, now it's canon", "there, now it's canon"),
+        ("*picture attached*\n\nnot a dog, that's a chachki", "not a dog, that's a chachki"),
+        ("(image attached) fine, here", "fine, here"),
+        ("image attached", ""),
+    ],
+)
+def test_an_attachment_announcement_is_stripped(text, expected):
+    """Discord shows the picture. Narrating it is a bot describing its own
+    output, and the instruction not to did not hold."""
+    assert decide.strip_attachment_notes(text) == expected
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "he attached the wrong file to the ticket again",
+        "that picture of zack is still funny",
+        "attached to the raid group all night",
+        "raid wiped so hard the clanker refused the render",
+        "",
+    ],
+)
+def test_ordinary_sentences_survive_the_stripper(text):
+    """A guard that eats real messages is worse than the problem."""
+    assert decide.strip_attachment_notes(text) == text
+
+
+# --- a commissioned picture posts alone -------------------------------------
+
+
+def test_the_brief_is_cleaned_up(persona_bot, monkeypatch):
+    """Asked for a description and nothing else, it mostly complies - but a
+    stray lead-in or a wrapping quote is cheap to survive."""
+
+    async def fake_generate(transcript, **kw):
+        return '  "Sure: a beige minivan in an empty car park"  '
+
+    monkeypatch.setattr(persona_bot, "generate", fake_generate)
+    got = asyncio.run(persona_bot._commission_brief("t", set()))
+    assert got == "a beige minivan in an empty car park"
+
+
+def test_a_refusal_gets_one_retry(persona_bot, monkeypatch, bot_module):
+    """A commission that quietly produces nothing is the bug being fixed."""
+    calls = []
+
+    async def fake_generate(prompt, **kw):
+        calls.append(prompt)
+        return None if len(calls) == 1 else b"PNG"
+
+    async def retry():
+        return "something harmless instead"
+
+    monkeypatch.setattr(bot_module.imagegen, "generate", fake_generate)
+    monkeypatch.setattr(bot_module, "GEMINI_KEY", "test-key")
+    channel = FakeChannel()
+    asyncio.run(persona_bot._deliver_image(channel, "a refused thing", "r", retry))
+    assert len(channel.files) == 1, "the retry should have produced a picture"
+    assert calls[1] == "something harmless instead"
+
+
+def test_without_a_retry_a_refusal_is_still_silent(persona_bot, monkeypatch, bot_module):
+    """Only commissions retry. An unprompted picture that gets refused stays
+    refused - nobody was waiting for it."""
+
+    async def fake_generate(prompt, **kw):
+        return None
+
+    monkeypatch.setattr(bot_module.imagegen, "generate", fake_generate)
+    monkeypatch.setattr(bot_module, "GEMINI_KEY", "test-key")
+    channel = FakeChannel()
+    asyncio.run(persona_bot._deliver_image(channel, "a refused thing", "r", None))
+    assert channel.files == []
+    assert persona_bot._images_today == 0

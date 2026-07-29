@@ -143,6 +143,58 @@ IMAGE_CONTEXT = """
 
 {context}"""
 
+# An ally asked outright, so a picture is happening and the model is not being
+# consulted about it. IMAGE_OPTION cannot do this job: it opens with "usually
+# don't", which is right for an unprompted picture and is why a commission came
+# back as an ordinary line with no directive in it.
+IMAGE_COMMISSIONED = """
+- A picture is being attached to this message. That is already decided and \
+handled for you - you do not need to describe it, request it, or do anything \
+about it.
+- So write your line as though the picture were already sitting there next to \
+it. Do NOT describe what it shows, do not caption it, do not announce it, do \
+not say "here" or "here you go".
+- Short. One line. The picture is doing the work; you are just talking."""
+
+# Asks for the picture's description on its own, away from the chat reply. A
+# commission cannot depend on the model volunteering a directive inside a
+# message - when it declines, the person who asked gets nothing at all.
+IMAGE_BRIEF_PROMPT = """\
+Someone in this channel just asked you for a picture, and one is being made.
+
+Describe what it should show. Not a message, not a reply, not a caption - a \
+description of an image, the way you would tell someone what to draw.
+
+Rules:
+- Write the description ONLY. No preamble, no quotes, no explanation, nothing \
+before or after it.
+- One or two sentences. Subject, setting, and how it looks.
+- It is yours. Take what they asked for as a starting point and make it \
+funnier, more specific, or more of a slight than they had in mind. Never just \
+repeat their wording back.
+- No real names, no real places, no likeness of anyone here. Describe what \
+something looks like rather than who it is.
+- Describe a picture that can actually be drawn. No text in the image, no \
+captions, no labels, no logos."""
+
+# The image model refuses some briefs outright. A commission that quietly
+# produces nothing is the failure being fixed here, so a refusal gets one more
+# go at a version that survives the filter.
+IMAGE_BRIEF_RETRY = """
+
+The first version of this was refused by the image generator, so write a \
+completely different one.
+
+Do not reuse the subject, the setting, or the imagery you just chose - \
+rewording it will be refused again. Pick a different thing from the \
+conversation entirely.
+
+Avoid: anything physically intimate, anyone who could read as a real \
+identifiable person, anything violent, anything showing a person or animal \
+as harmed, starving, injured or suffering. Nothing bleak. Aim for something \
+harmless and absurd - an object, a place, an animal that is perfectly fine, \
+a situation that is stupid rather than sad."""
+
 # Appended when someone asked for a picture and is not getting one. Without
 # this the model, told nothing, wrote a picture description as its message and
 # posted it with nothing attached - the worst of both outcomes, and how this
