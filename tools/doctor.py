@@ -141,6 +141,20 @@ async def check_3_and_4_discord() -> bool:
                     return
                 ok(name)
 
+            # Not fatal: pictures are optional, and everything else works
+            # without this. But the failure it causes is invisible - the image
+            # generates, costs money, and then cannot be uploaded.
+            if os.getenv("JAQ_GEMINI_KEY", "").strip():
+                if perms.attach_files:
+                    ok("attach_files")
+                else:
+                    print(
+                        "  WARN  attach_files not granted - pictures will "
+                        "generate and then fail to upload\n"
+                        "        FIX: Server Settings -> Roles -> this bot -> "
+                        "Attach Files"
+                    )
+
             count, blank = 0, 0
             async for m in channel.history(limit=10):
                 count += 1
@@ -195,16 +209,18 @@ async def check_5_images() -> bool:
         print("  SKIP  no JAQ_GEMINI_KEY set - pictures are off, which is fine")
         return True
 
-    model = os.getenv("JAQ_GEMINI_IMAGE_MODEL", "gemini-2.5-flash-image")
+    model = os.getenv("JAQ_GEMINI_IMAGE_MODEL", "gemini-3.1-flash-image")
     data = await imagegen.generate(
         "a plain grey circle on a white background", key=key, model=model
     )
     if not data:
         return fail(
             "render",
-            f"no image came back from {model}",
-            "check the key at aistudio.google.com/apikey, and that "
-            "JAQ_GEMINI_IMAGE_MODEL names a current image model",
+            f"no image came back from {model} (see the log line above)",
+            "an HTTP 429 saying 'limit: 0' means the free tier, which serves "
+            "no image generation at all - enable billing on the key's project "
+            "at aistudio.google.com. A 403 means the key is wrong, and a 404 "
+            "means JAQ_GEMINI_IMAGE_MODEL names a model that no longer exists",
         )
     return ok("render", f"{model}, {len(data) // 1024} KB")
 

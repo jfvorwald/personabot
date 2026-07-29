@@ -297,6 +297,11 @@ live mode, which needs a persistent connection.
 Off unless you set a Google AI Studio key. With `JAQ_GEMINI_KEY` empty the
 whole path is inert - no dice rolled, no prompt changed, no calls made.
 
+**A key alone is not enough.** Google's free tier serves image generation a
+quota of exactly zero - every model returns `429` with `limit: 0`, which reads
+like a rate limit and is actually a tier limit that no amount of waiting fixes.
+The key's project needs billing enabled. `doctor.py` tells the two apart.
+
 **There is no command for this, deliberately.** Nobody can ask for a picture.
 A message saying "draw me a dog" is just something a person said, and it
 reaches the model as transcript, never as an instruction. What happens instead

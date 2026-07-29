@@ -113,7 +113,11 @@ IMAGE_ENABLED = os.getenv("IMAGE_ENABLED", "true").lower() == "true"
 # Google AI Studio key. Named for the wider project rather than this bot,
 # because it is the same credential across it.
 GEMINI_KEY = os.getenv("JAQ_GEMINI_KEY", "")
-GEMINI_IMAGE_MODEL = os.getenv("JAQ_GEMINI_IMAGE_MODEL", "gemini-2.5-flash-image")
+# The fast image model. Its lite sibling, gemini-3.1-flash-lite-image, is
+# cheaper again, and gemini-3-pro-image is better and slower - none of which
+# matters until the key's project has billing on it, because the free tier
+# serves image generation a quota of exactly zero.
+GEMINI_IMAGE_MODEL = os.getenv("JAQ_GEMINI_IMAGE_MODEL", "gemini-3.1-flash-image")
 # The money. A picture costs orders of magnitude more than a reply, so this is
 # a hard stop rather than a target.
 IMAGE_DAILY_MAX = int(os.getenv("IMAGE_DAILY_MAX", "15"))
