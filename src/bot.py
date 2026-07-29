@@ -771,7 +771,7 @@ class PersonaBot(discord.Client):
         # the ASCII path, a rolled offer does not.
         return "commissioned" if commissioned else "rolled"
 
-    async def _asks_for_a_picture(self, transcript: str) -> bool:
+    async def _asks_for_a_picture(self, transcript: str, asked: str) -> bool:
         """Is the last message asking for a picture? Allies only.
 
         Wordlists cannot cover how people ask. Three phrasings were missed
@@ -785,12 +785,20 @@ class PersonaBot(discord.Client):
         messages only. Strangers stay on the wordlist, where a false negative
         is the desired outcome anyway.
         """
+        # The message being judged has to be named explicitly. The transcript
+        # is read after the think delay, so anything said in those seconds is
+        # now its last line - which is how a request got judged as "no", the
+        # classifier having been shown somebody else's message.
+        content = (
+            f"Conversation so far, for context only:\n\n{transcript[-2000:]}\n\n"
+            f"---\n\nThe message to judge:\n\n{asked.strip()[:800]}"
+        )
         try:
             response = await self.claude.messages.create(
                 model=MODEL,
                 max_tokens=5,
                 system=PICTURE_INTENT_PROMPT,
-                messages=[{"role": "user", "content": transcript[-2000:]}],
+                messages=[{"role": "user", "content": content}],
             )
         except Exception:
             log.exception("Picture-intent check failed; assuming no")
@@ -798,7 +806,13 @@ class PersonaBot(discord.Client):
         answer = "".join(
             b.text for b in response.content if b.type == "text"
         ).strip().upper()
-        return answer.startswith("YES")
+        wants = answer.startswith("YES")
+        # Always logged: a silent no is indistinguishable from the feature
+        # being broken, which is exactly how this looked from the channel.
+        log.info(
+            "Picture intent: %s for %r", "YES" if wants else "no", asked.strip()[:90]
+        )
+        return wants
 
     async def _commission_brief(self, transcript: str, speakers, retry: bool = False) -> str:
         """Ask for the picture's description on its own.
@@ -1151,9 +1165,9 @@ class PersonaBot(discord.Client):
             and not decide.is_picture_request(message.clean_content)
             and not decide.is_art_request(message.clean_content)
         ):
-            asked_outright = await self._asks_for_a_picture(transcript)
-            if asked_outright:
-                log.info("Ally is asking for a picture (phrasing no wordlist caught)")
+            asked_outright = await self._asks_for_a_picture(
+                transcript, message.clean_content
+            )
         image_mode = (
             "" if patch_notes else self._offer_image(message, asked_outright)
         )

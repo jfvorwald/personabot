@@ -201,10 +201,12 @@ a situation that is stupid rather than sad."""
 # person asking like the feature is simply broken. So for the one person
 # allowed to commission one, the question is asked properly.
 PICTURE_INTENT_PROMPT = """\
-Below is the end of a Discord conversation. Decide one thing about the LAST \
-message only.
+You are shown a Discord conversation for context, and then ONE message to \
+judge. Judge only that message - the conversation may have moved on since it \
+was sent, and later messages are not the question.
 
-Is that last message asking for an image, picture, or drawing to be made?
+Is the message being judged asking for an image, picture, or drawing to be \
+made?
 
 It counts however it is phrased. All of these are YES:
 - "draw me a dog", "make a picture of X", "generate an image of X"

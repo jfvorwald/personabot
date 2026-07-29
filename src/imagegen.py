@@ -25,6 +25,8 @@ import asyncio
 import base64
 import logging
 
+import time
+
 import aiohttp
 
 log = logging.getLogger("personabot.imagegen")
@@ -78,6 +80,34 @@ def _first_image(payload: dict) -> bytes | None:
     return None
 
 
+def _why_empty(payload: dict) -> str:
+    """Say why a 200 carried no picture.
+
+    Google reports a block in several different places depending on what
+    tripped, so all of them are checked and whatever is found is reported
+    verbatim rather than being summarised into "filtered".
+    """
+    bits = []
+    feedback = payload.get("promptFeedback") or {}
+    if feedback.get("blockReason"):
+        bits.append(f"promptFeedback.blockReason={feedback['blockReason']}")
+    for candidate in payload.get("candidates") or []:
+        if candidate.get("finishReason"):
+            bits.append(f"finishReason={candidate['finishReason']}")
+        for rating in candidate.get("safetyRatings") or []:
+            if rating.get("blocked") or rating.get("probability") in ("HIGH", "MEDIUM"):
+                bits.append(
+                    f"safety {rating.get('category')}={rating.get('probability')}"
+                )
+        text = " ".join(
+            p.get("text", "")
+            for p in (candidate.get("content") or {}).get("parts") or []
+        ).strip()
+        if text:
+            bits.append(f"model said instead: {text[:300]!r}")
+    return "; ".join(bits) or f"nothing explanatory in the response: {str(payload)[:300]}"
+
+
 async def generate(
     prompt: str,
     *,
@@ -94,6 +124,11 @@ async def generate(
         "generationConfig": {"responseModalities": MODALITIES},
     }
     url = ENDPOINT.format(model=model)
+    # Every call to Google is logged, request and response both. A picture that
+    # does not arrive is otherwise indistinguishable from one that was never
+    # asked for, which is exactly how this looked from the channel.
+    log.info("REQUEST  model=%s timeout=%.0fs prompt=%r", model, timeout, prompt[:400])
+    started = time.monotonic()
 
     try:
         async with aiohttp.ClientSession(
@@ -104,27 +139,34 @@ async def generate(
                 json=body,
                 headers={"x-goog-api-key": key, "Content-Type": "application/json"},
             ) as response:
+                elapsed = time.monotonic() - started
                 if response.status != 200:
-                    # Body first, status second: the status alone does not say
-                    # whether this was a bad key, an exhausted quota, or a
-                    # model name that no longer exists, and those need
-                    # different fixes.
-                    detail = (await response.text())[:300]
-                    log.warning(
-                        "Image request failed: HTTP %s %s", response.status, detail
+                    # The whole body, not a slice: the status alone does not
+                    # say whether this was a bad key, an exhausted quota, or a
+                    # model that no longer exists, and those need different
+                    # fixes. Truncating it once cost an evening.
+                    detail = " ".join((await response.text()).split())
+                    log.error(
+                        "RESPONSE HTTP %s after %.1fs: %s",
+                        response.status,
+                        elapsed,
+                        detail[:2000],
                     )
                     return None
                 payload = await response.json()
+                log.info("RESPONSE HTTP 200 after %.1fs", elapsed)
     except asyncio.TimeoutError:
-        log.warning("Image request timed out after %.0fs", timeout)
+        log.error("RESPONSE timed out after %.0fs (no reply from Google)", timeout)
         return None
-    except aiohttp.ClientError:
-        log.warning("Image request failed to complete", exc_info=True)
+    except aiohttp.ClientError as e:
+        log.error("RESPONSE failed to complete: %s: %s", type(e).__name__, e)
         return None
 
     image = _first_image(payload)
     if image is None:
-        # Most often a content filter. Worth a line in the log so a run of them
-        # is visible, but never worth a line in the channel.
-        log.info("No image came back (filtered, or the model answered in prose)")
+        # Almost always a content filter. Say which one, and say what came back
+        # instead - "no image" on its own is not a diagnosis.
+        log.warning("NO IMAGE in a 200 response. %s", _why_empty(payload))
+    else:
+        log.info("IMAGE %d KB decoded", len(image) // 1024)
     return image

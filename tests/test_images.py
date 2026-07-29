@@ -823,7 +823,7 @@ def test_the_classifier_answer_is_parsed(persona_bot, monkeypatch):
         )
 
     persona_bot.claude = t.SimpleNamespace(messages=t.SimpleNamespace(create=fake_create))
-    assert asyncio.run(persona_bot._asks_for_a_picture("anything")) is True
+    assert asyncio.run(persona_bot._asks_for_a_picture("ctx", "anything")) is True
 
 
 def test_a_failing_classifier_assumes_no(persona_bot):
@@ -833,4 +833,52 @@ def test_a_failing_classifier_assumes_no(persona_bot):
         raise RuntimeError("api down")
 
     persona_bot.claude = t.SimpleNamespace(messages=t.SimpleNamespace(create=boom))
-    assert asyncio.run(persona_bot._asks_for_a_picture("draw me a dog")) is False
+    assert asyncio.run(persona_bot._asks_for_a_picture("ctx", "draw me a dog")) is False
+
+
+# --- every Gemini call is visible in the log --------------------------------
+#
+# A picture that does not arrive was indistinguishable from one that was never
+# asked for. That ambiguity cost several rounds of "why is there no image".
+
+
+def test_a_block_reason_is_explained():
+    payload = {"promptFeedback": {"blockReason": "SAFETY"}}
+    assert "blockReason=SAFETY" in imagegen._why_empty(payload)
+
+
+def test_a_finish_reason_is_explained():
+    payload = {"candidates": [{"finishReason": "IMAGE_SAFETY"}]}
+    assert "finishReason=IMAGE_SAFETY" in imagegen._why_empty(payload)
+
+
+def test_a_safety_rating_is_explained():
+    payload = {
+        "candidates": [
+            {"safetyRatings": [{"category": "HARM_SEXUAL", "probability": "HIGH"}]}
+        ]
+    }
+    out = imagegen._why_empty(payload)
+    assert "HARM_SEXUAL" in out and "HIGH" in out
+
+
+def test_a_prose_answer_is_quoted_back():
+    """Knowing it answered in words rather than being blocked changes the fix."""
+    payload = {
+        "candidates": [{"content": {"parts": [{"text": "I can't draw that"}]}}]
+    }
+    assert "I can't draw that" in imagegen._why_empty(payload)
+
+
+def test_an_unexplained_empty_response_still_says_something():
+    assert imagegen._why_empty({}).startswith("nothing explanatory")
+
+
+def test_the_request_is_logged(caplog):
+    """The prompt that was sent is the first thing anyone debugging needs."""
+    import logging
+
+    with caplog.at_level(logging.INFO, logger="personabot.imagegen"):
+        asyncio.run(imagegen.generate("a beige minivan", key="", model="m"))
+    # No key means no request at all, and therefore nothing to log.
+    assert "REQUEST" not in caplog.text
