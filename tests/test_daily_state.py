@@ -275,3 +275,32 @@ def test_a_new_day_clears_per_person_spend(persona_bot, bot_module, monkeypatch)
     persona_bot._replies_by_person = {"123": 40}
     persona_bot._roll_day(datetime.date(2026, 7, 29))
     assert persona_bot._replies_by_person == {}
+
+
+def test_saving_before_the_day_is_set_is_refused(persona_bot, tmp_path, bot_module):
+    """str(None) is a valid JSON string that matches no date, so such a file
+    is silently rejected on the next startup and the budget refills mid-day.
+    A throwaway script did exactly that and reset an evening's counters."""
+    path = tmp_path / "s.json"
+    persona_bot._state_path = lambda: str(path)
+    persona_bot._save_day = bot_module.PersonaBot._save_day.__get__(persona_bot)
+
+    persona_bot._reply_day = None
+    persona_bot._save_day()
+    assert not path.exists(), "a dayless save must not touch the state file"
+
+
+def test_an_existing_file_is_not_clobbered_by_a_dayless_save(
+    persona_bot, tmp_path, bot_module
+):
+    import datetime
+    import json
+
+    path = tmp_path / "s.json"
+    path.write_text(json.dumps({"day": "2026-07-28", "replies": 58}))
+    persona_bot._state_path = lambda: str(path)
+    persona_bot._save_day = bot_module.PersonaBot._save_day.__get__(persona_bot)
+
+    persona_bot._reply_day = None
+    persona_bot._save_day()
+    assert json.loads(path.read_text())["replies"] == 58

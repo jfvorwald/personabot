@@ -241,7 +241,17 @@ class PersonaBot(discord.Client):
         return at_root(STATE_FILE)
 
     def _save_day(self) -> None:
-        """Persist today's spend. Cheap, and it runs only when we post."""
+        """Persist today's spend. Cheap, and it runs only when we post.
+
+        Refuses to write before a day has been established. `str(None)` is a
+        perfectly valid JSON string that matches no date, so a save from a bot
+        that never restored or rolled leaves a file the next startup silently
+        rejects - and a rejected file means a fresh budget mid-day. A one-off
+        script did exactly that and reset an evening's counters.
+        """
+        if self._reply_day is None:
+            log.warning("Refusing to save state before the day is set")
+            return
         try:
             with open(self._state_path(), "w") as f:
                 json.dump(
