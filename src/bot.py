@@ -48,7 +48,13 @@ import improve
 import react
 from decide import fold
 from paths import ROOT, at_root
-from persona import load_persona, load_post_times, load_psychology, load_vocab
+from persona import (
+    load_dm_persona,
+    load_persona,
+    load_post_times,
+    load_psychology,
+    load_vocab,
+)
 
 
 logging.basicConfig(
@@ -69,6 +75,7 @@ from prompts import (
     POLL_LOST_PROMPT,
     POLL_PROMPT,
     FALLBACK_BRUSH_OFF,
+    DM_DEFAULT_PERSONA,
     DM_FRAMING,
     FRAMING,
     IMAGE_BRIEF_PROMPT,
@@ -103,6 +110,7 @@ class PersonaBot(discord.Client):
         super().__init__(intents=intents)
 
         self.persona = persona
+        self.dm_persona = load_dm_persona()
         self.psychology = load_psychology()
         self.vocab = load_vocab()
         self.post_now = post_now
@@ -1720,7 +1728,44 @@ class PersonaBot(discord.Client):
         log.info("Posted %d chars to #%s", len(reply), channel.name)
         return True
 
-    def _safe_to_send(self, text: str) -> bool:
+    async def _generate_direct(
+        self, transcript: str, offer_image: bool, commissioned: bool, ordered: bool
+    ) -> str:
+        """The DM prompt, built from nothing rather than from the channel one.
+
+        A private conversation is not the channel with the volume down. The
+        channel prompt describes a room to read, a character to hold up in
+        front of it, and a set of things not to reveal to the people in it -
+        every one of which is wrong here.
+        """
+        system = (self.dm_persona or DM_DEFAULT_PERSONA) + f"\n\n---\n\n{DM_FRAMING}"
+        if commissioned:
+            system += IMAGE_COMMISSIONED
+        elif offer_image:
+            system += IMAGE_OPTION
+        if ordered:
+            system += OBEY_PROMPT
+
+        user = (
+            f"Here is the conversation so far:\n\n{transcript}\n\n"
+            "Write your next message."
+            if transcript.strip()
+            else "He has just opened a direct message with you."
+        )
+        response = await self.claude.messages.create(
+            model=MODEL,
+            max_tokens=4000,
+            system=system,
+            output_config={"effort": EFFORT},
+            messages=[{"role": "user", "content": user}],
+        )
+        if response.stop_reason == "refusal":
+            log.warning("Model declined in a DM: %s", response.stop_details)
+            return ""
+        text = "".join(b.text for b in response.content if b.type == "text").strip()
+        return text if self._safe_to_send(text, direct=True) else ""
+
+    def _safe_to_send(self, text: str, direct: bool = False) -> bool:
         """Refuse to post anything carrying a credential or a forbidden name.
 
         The prompt asks the model to keep these back. This is what happens when
@@ -1728,8 +1773,16 @@ class PersonaBot(discord.Client):
         Silence is the correct failure here - a message explaining that
         something was withheld is itself a disclosure.
         """
-        leak = guard.find_leak(text, [DISCORD_TOKEN, os.getenv("ANTHROPIC_API_KEY", "")],
-                               REDACT_TERMS)
+        # In a DM the redacted names are pointless: they are his own name, his
+        # family and his employer, and he is the only person who can read it.
+        # Blocking them there would silently drop his messages for saying
+        # things he already knows. Credentials never go out either way - a
+        # token in a DM is a token on Discord's servers just the same.
+        leak = guard.find_leak(
+            text,
+            [DISCORD_TOKEN, os.getenv("ANTHROPIC_API_KEY", ""), GEMINI_KEY],
+            [] if direct else REDACT_TERMS,
+        )
         if leak is None:
             return True
         log.error("BLOCKED an outgoing message containing a %s", leak)
@@ -1778,8 +1831,18 @@ class PersonaBot(discord.Client):
         # "You may decline to answer" and "carry this out now" cannot both be
         # in one prompt, so an order replaces the silence option rather than
         # sitting next to it.
-        framing = FRAMING + (DM_FRAMING if direct else "")
-        framing += "" if (ordered or direct) else SILENCE_OPTION if may_stay_silent else ""
+        if direct:
+            # Built from scratch rather than from the channel prompt. Nothing
+            # here is the room: no VOCAB (channel slang), no brain (notes about
+            # other people), no confidentiality block - that one exists to stop
+            # people extracting how Jaq works, and this is the person who wrote
+            # him. Withholding his own design from him would be absurd.
+            return await self._generate_direct(
+                transcript, offer_image, commissioned, ordered
+            )
+
+        framing = FRAMING
+        framing += "" if ordered else SILENCE_OPTION if may_stay_silent else ""
         framing += OBEY_PROMPT if ordered else ""
         if commissioned:
             framing += IMAGE_COMMISSIONED

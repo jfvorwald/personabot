@@ -12,7 +12,7 @@ import os
 import sys
 from datetime import time as dtime
 
-from config import PERSONA_FILE, PSYCHOLOGY_FILE, TIMEZONE, VOCAB
+from config import DM_PERSONA_FILE, PERSONA_FILE, PSYCHOLOGY_FILE, TIMEZONE, VOCAB
 from prompts import VOCAB_BLOCK
 from paths import at_root
 
@@ -51,3 +51,22 @@ def load_vocab() -> str:
     if not VOCAB:
         return ""
     return VOCAB_BLOCK.format(words="\n".join(f"- {w}" for w in VOCAB))
+
+
+def load_dm_persona() -> str:
+    """Who Jaq is in a direct message with the person who made him.
+
+    Deliberately a separate document from persona.md. The channel persona is
+    written for an audience - a character doing a bit in front of a room - and
+    a private conversation is not that with the volume lowered, it is a
+    different thing entirely.
+
+    Absent, this returns "" and bot.py falls back to a plain default rather
+    than to the channel character. That fallback matters: a missing file must
+    not silently put the performer back in the room.
+    """
+    try:
+        with open(at_root(DM_PERSONA_FILE), encoding="utf-8") as f:
+            return f.read().strip()
+    except OSError:
+        return ""

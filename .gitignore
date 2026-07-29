@@ -33,3 +33,4 @@ __pycache__/
 .bot.pid
 .claude/
 .bot_state.json
+dm_persona.md

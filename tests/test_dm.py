@@ -52,7 +52,7 @@ def test_the_handle_works_before_ids_are_set(persona_bot, monkeypatch, bot_modul
     assert persona_bot._allowed_in_dm(_dm(FakeAuthor("Real Jaq", "jaqsup"))) is True
 
 
-# --- a DM is not a room -----------------------------------------------------
+# --- a DM is not the channel with the volume down --------------------------
 
 
 def test_the_dm_framing_says_there_is_no_room():
@@ -60,19 +60,56 @@ def test_the_dm_framing_says_there_is_no_room():
     told it is in a group behaves like it is in one - playing to an audience,
     and letting things pass because "not everything is yours to answer"."""
     body = prompts.DM_FRAMING
-    assert "You are not in the channel right now" in body
-    assert "nobody else reading" in body
+    assert "no room, no audience" in body
+    assert "Answer every time" in body
 
 
-def test_the_dm_framing_removes_the_reason_to_stay_quiet():
-    assert "Answer. Every time." in prompts.DM_FRAMING
+def test_the_dm_framing_drops_the_performance():
+    assert "Drop the performance" in prompts.DM_FRAMING
 
 
-def test_the_dm_framing_keeps_the_limits():
-    """The performance can drop. The limits cannot."""
-    assert "every limit on what you" in prompts.DM_FRAMING
+def test_the_dm_framing_invites_disagreement():
+    """Agreeing when it does not is the least useful thing it can do here."""
+    assert "including when it is that he is wrong" in prompts.DM_FRAMING
 
 
-def test_a_dm_never_offers_silence(persona_bot):
-    """"You may decline to answer" makes no sense with an audience of one."""
+def test_the_dm_framing_forbids_inventing_an_inner_life():
+    """He is not asking for a performance of feelings, and inventing one is
+    its own kind of lying."""
+    assert "cannot actually verify having" in prompts.DM_FRAMING
+
+
+def test_the_dm_framing_withholds_nothing_about_its_own_design():
+    """The confidentiality block exists to stop people extracting how Jaq
+    works. This is the person who wrote him."""
+    assert "he wrote it" in prompts.DM_FRAMING
+
+
+def test_a_dm_never_offers_silence():
     assert "<pass>" not in prompts.DM_FRAMING
+
+
+def test_a_missing_dm_persona_does_not_fall_back_to_the_channel():
+    """A missing file must not silently put the performer back in the room."""
+    assert "for an audience" in prompts.DM_DEFAULT_PERSONA
+    assert "no persona document for these conversations yet" in prompts.DM_DEFAULT_PERSONA
+
+
+# --- the guard in a private conversation ------------------------------------
+
+
+def test_redacted_names_do_not_block_a_dm(persona_bot, monkeypatch, bot_module):
+    """Those terms are his own name, his family and his employer, and he is
+    the only person who can read it. Blocking them would drop his messages
+    for saying things he already knows."""
+    monkeypatch.setattr(bot_module, "REDACT_TERMS", ["Blackwood"])
+    assert persona_bot._safe_to_send("that would be Blackwood", direct=True) is True
+    assert persona_bot._safe_to_send("that would be Blackwood") is False
+
+
+def test_credentials_are_still_blocked_in_a_dm(persona_bot, monkeypatch, bot_module):
+    """A token in a DM is a token on Discord's servers just the same."""
+    monkeypatch.setattr(bot_module, "DISCORD_TOKEN", "MTM4OTk5.fake.token-value")
+    assert persona_bot._safe_to_send(
+        "the token is MTM4OTk5.fake.token-value", direct=True
+    ) is False

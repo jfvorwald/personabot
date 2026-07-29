@@ -217,6 +217,12 @@ OBEY_HANDLES = [
 # Same account list as OBEY, and for the same reason - this is a private line,
 # not a feature. Anyone else who DMs the bot gets nothing at all.
 DM_ENABLED = os.getenv("DM_ENABLED", "true").lower() == "true"
+# A DM is not the channel with the volume down - it runs on its own document.
+# persona.md describes someone performing for a room, and layering "but this is
+# private" on top of that gets a performer being quieter, not a different
+# conversation. Optional: with no file, the DM falls back to a plain, honest
+# default rather than to the channel character.
+DM_PERSONA_FILE = os.getenv("DM_PERSONA_FILE", "dm_persona.md")
 # Thinking time in a DM. Far shorter than the channel: the delays there exist
 # so a reply does not land suspiciously fast in front of an audience, and in a
 # private conversation the audience is the person waiting for it.

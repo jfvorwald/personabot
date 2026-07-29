@@ -20,7 +20,7 @@ PATTERN='\.venv/bin/python src/bot\.py --live'
 # disk on every reply, so editing a profile takes effect immediately.
 WATCHED=(src/bot.py src/brain.py src/contexts.py src/decide.py src/react.py src/config.py
          src/prompts.py src/persona.py src/changelog.py src/guard.py
-         src/imagegen.py src/improve.py persona.md psychology.md .env)
+         src/imagegen.py src/improve.py src/profiles.py persona.md dm_persona.md psychology.md .env)
 
 # --- helpers ---------------------------------------------------------------
 
