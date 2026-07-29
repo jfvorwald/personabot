@@ -327,6 +327,30 @@ Three limits, all in `.env`:
 | `IMAGE_COOLDOWN_SECONDS` | 600 | The important one. Stops one back-and-forth spending the day |
 | `IMAGE_BASE_RATE` | 0.08 | How often an eligible reply is offered the option at all |
 
+### Contexts
+
+Every channel has recurring subjects, and a picture about one lands better when
+it looks like it belongs. `contexts/` holds one markdown file per world, each
+carrying its own trigger words and its own odds:
+
+```markdown
+---
+name: warcraft
+when: wow, azeroth, raid, mythic, guild, loot, wipe
+chance: 0.6
+---
+
+Heavy plate armour, torchlit stone keeps, and shoulder pads the size of a car.
+```
+
+A context needs a trigger word in the recent conversation *and* to win its
+`chance` roll, so the same world does not claim every picture it could. Adding
+one is writing a file - nothing to register, and no restart needed. Copy
+`contexts/example.md`; see `contexts/README.md` for the full format.
+
+Your own contexts are gitignored like `persona.md`, since they describe a
+particular group's in-jokes. Only the template ships.
+
 Every generation logs its reason and the remaining budget, so tune these from
 `live.log` rather than by guessing. Any failure - a filter, a quota, a timeout
 - is silent: the message posts on its own and nothing is said about it.

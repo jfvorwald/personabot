@@ -39,6 +39,7 @@ from discord.ext import tasks
 
 import brain
 import changelog
+import contexts
 import decide
 import guard
 import imagegen
@@ -67,6 +68,7 @@ from prompts import (
     POLL_PROMPT,
     FALLBACK_BRUSH_OFF,
     FRAMING,
+    IMAGE_CONTEXT,
     IMAGE_OPTION,
     MAX_DISCORD_CHARS,
     OPENER_PROMPT,
@@ -673,6 +675,24 @@ class PersonaBot(discord.Client):
         )
         return True
 
+    def _image_context(self, transcript: str) -> str:
+        """A world to set the picture in, if the room is talking about one.
+
+        Only reached when a picture is already on the table, so the files are
+        read on a small fraction of replies rather than on every message.
+        Never fatal: a broken context file costs a picture its setting, not the
+        reply.
+        """
+        try:
+            chosen = contexts.pick(transcript)
+        except Exception:
+            log.exception("Context lookup failed; carrying on without one")
+            return ""
+        if not chosen:
+            return ""
+        log.info("Picture context: %s", chosen.name)
+        return IMAGE_CONTEXT.format(context=chosen.body)
+
     def _send_image_later(self, channel, prompt: str, reason: str) -> None:
         """Render and post a picture without blocking the reply.
 
@@ -1204,7 +1224,8 @@ class PersonaBot(discord.Client):
         offer_image: bool = False,
     ) -> str:
         framing = FRAMING + (SILENCE_OPTION if may_stay_silent else "")
-        framing += IMAGE_OPTION if offer_image else ""
+        if offer_image:
+            framing += IMAGE_OPTION + self._image_context(transcript)
         system = self.persona
         if self.psychology:
             system = f"{system}\n\n---\n\n{self.psychology}"

@@ -139,6 +139,14 @@ the machinery in front of everyone.
 Every failure is silent. An apology for a missing picture is a bot discussing
 its own plumbing in front of the room.
 
+**Contexts are content, not code.** `contexts/*.md` each describe a world a
+picture can be set in, with their own trigger words and their own `chance`.
+Adding one is writing a file - there is nothing to register, and the directory
+is read fresh so an edit needs no restart. `contexts/example.md` and the README
+are tracked; every other file there is gitignored, like `persona.md`, because
+they describe a specific group's in-jokes. Two gates on purpose: a context that
+fires every time it matches gives the channel a house style nobody chose.
+
 ## Commit messages are read out loud
 
 When someone in the channel asks for an update, the bot answers with patch

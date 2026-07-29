@@ -13,6 +13,12 @@ persona.*.md.bak
 brain/people/
 brain/_index.json
 
+# Your picture contexts. They describe a specific group's in-jokes, the same
+# reason persona.md is not shared. The template and its README are.
+contexts/*.md
+!contexts/example.md
+!contexts/README.md
+
 .venv/
 __pycache__/
 *.log

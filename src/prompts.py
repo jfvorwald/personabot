@@ -135,6 +135,14 @@ something looks like instead of who it is.
 - The line is removed before your message posts. Never mention it, never refer \
 to having made a picture, never promise one."""
 
+# Appended after IMAGE_OPTION when a context matched what the room is talking
+# about. Framed as where the picture is set rather than as a rule, because it
+# is describing a world, not adding a constraint.
+IMAGE_CONTEXT = """
+- If you do attach a picture, set it in this world:
+
+{context}"""
+
 
 PATCH_NOTES_PROMPT = """\
 Someone asked what has changed about you lately. Below is what was actually \
