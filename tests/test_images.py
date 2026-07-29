@@ -768,3 +768,69 @@ def test_without_a_retry_a_refusal_is_still_silent(persona_bot, monkeypatch, bot
     asyncio.run(persona_bot._deliver_image(channel, "a refused thing", "r", None))
     assert channel.files == []
     assert persona_bot._images_today == 0
+
+
+# --- asking is not a wordlist problem ---------------------------------------
+#
+# Three phrasings were missed live: "draw me a dog" (no picture noun),
+# "create a picture of" (verb not listed), and "imagine X in azeroth" (matched
+# nothing at all). Each miss looks from the outside like the feature is broken.
+
+
+def test_the_intent_prompt_covers_the_phrasings_that_failed():
+    body = prompts.PICTURE_INTENT_PROMPT
+    assert '"imagine X"' in body
+    assert '"draw me a dog"' in body
+    assert "YES or NO" in body
+
+
+def test_the_intent_prompt_excludes_ascii_and_existing_pictures():
+    """It must not steal an ASCII request, and reacting to a picture that
+    already exists is not a request for a new one."""
+    body = prompts.PICTURE_INTENT_PROMPT
+    assert "ASCII art specifically" in body
+    assert "already exists" in body
+
+
+def test_an_outright_ask_commissions_regardless_of_wording(ready):
+    """This is the override: no wordlist matched "imagine ...", and it still
+    has to produce a picture."""
+    msg = _ally_msg("imagine ben being kissed on the head in azeroth")
+    # No wordlist matches this, so without the override it is at the mercy of
+    # the dice - which is exactly how it produced nothing live.
+    assert ready._offer_image(msg) != "commissioned"
+    assert ready._offer_image(msg, asked_outright=True) == "commissioned"
+
+
+def test_the_override_does_not_apply_to_strangers(ready):
+    """Only allies commission, whatever the classifier thinks."""
+    msg = _pic_msg("imagine ben being kissed on the head in azeroth")
+    assert ready._offer_image(msg, asked_outright=True) != "commissioned"
+
+
+def test_the_override_still_respects_an_ascii_request(ready):
+    msg = _ally_msg("imagine ben in ascii")
+    assert ready._offer_image(msg, asked_outright=True) != "commissioned"
+
+
+def test_the_classifier_answer_is_parsed(persona_bot, monkeypatch):
+    import types as t
+
+    async def fake_create(**kw):
+        return t.SimpleNamespace(
+            content=[t.SimpleNamespace(type="text", text=" yes\n")],
+            stop_reason="end_turn",
+        )
+
+    persona_bot.claude = t.SimpleNamespace(messages=t.SimpleNamespace(create=fake_create))
+    assert asyncio.run(persona_bot._asks_for_a_picture("anything")) is True
+
+
+def test_a_failing_classifier_assumes_no(persona_bot):
+    import types as t
+
+    async def boom(**kw):
+        raise RuntimeError("api down")
+
+    persona_bot.claude = t.SimpleNamespace(messages=t.SimpleNamespace(create=boom))
+    assert asyncio.run(persona_bot._asks_for_a_picture("draw me a dog")) is False

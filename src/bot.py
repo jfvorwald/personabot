@@ -75,6 +75,7 @@ from prompts import (
     IMAGE_DECLINED,
     IMAGE_OPTION,
     MAX_DISCORD_CHARS,
+    PICTURE_INTENT_PROMPT,
     OPENER_PROMPT,
     PASS_TOKEN,
     POKE_PROMPT,
@@ -690,7 +691,7 @@ class PersonaBot(discord.Client):
                  self._art_today + 1, ART_DAILY_MAX)
         return ASCII_ART_PROMPT.format(ask=ART_OVERKILL_INSTRUCTION)
 
-    def _offer_image(self, message) -> str:
+    def _offer_image(self, message, asked_outright: bool = False) -> str:
         """Should this reply even be allowed to carry a picture?
 
         Jaq is the author of his pictures, not a renderer people can operate.
@@ -728,7 +729,11 @@ class PersonaBot(discord.Client):
         commissioned = (
             ally
             and not decide.wants_ascii(asked)
-            and (decide.is_picture_request(asked) or decide.is_art_request(asked))
+            and (
+                asked_outright
+                or decide.is_picture_request(asked)
+                or decide.is_art_request(asked)
+            )
         )
         if not commissioned:
             if decide.is_picture_request(asked):
@@ -765,6 +770,35 @@ class PersonaBot(discord.Client):
         # The caller needs to know which of these it is: a commission outranks
         # the ASCII path, a rolled offer does not.
         return "commissioned" if commissioned else "rolled"
+
+    async def _asks_for_a_picture(self, transcript: str) -> bool:
+        """Is the last message asking for a picture? Allies only.
+
+        Wordlists cannot cover how people ask. Three phrasings were missed
+        live - "draw me a dog" names no picture noun, "create a picture of"
+        used a verb that was not listed, "imagine X in azeroth" matched
+        nothing at all - and every miss looks from the outside like the
+        feature is broken rather than like a rule being applied.
+
+        So for the one person allowed to commission a picture, the question
+        gets asked properly. One small call, a handful of tokens, on ally
+        messages only. Strangers stay on the wordlist, where a false negative
+        is the desired outcome anyway.
+        """
+        try:
+            response = await self.claude.messages.create(
+                model=MODEL,
+                max_tokens=5,
+                system=PICTURE_INTENT_PROMPT,
+                messages=[{"role": "user", "content": transcript[-2000:]}],
+            )
+        except Exception:
+            log.exception("Picture-intent check failed; assuming no")
+            return False
+        answer = "".join(
+            b.text for b in response.content if b.type == "text"
+        ).strip().upper()
+        return answer.startswith("YES")
 
     async def _commission_brief(self, transcript: str, speakers, retry: bool = False) -> str:
         """Ask for the picture's description on its own.
@@ -1104,7 +1138,25 @@ class PersonaBot(discord.Client):
         # Decided before the branches so the dice are rolled exactly once, and
         # so a commission can outrank the ASCII path below.
         patch_notes = self._wants_patch_notes(message)
-        image_mode = "" if patch_notes else self._offer_image(message)
+        # Only allies can commission one, so only ally messages are worth the
+        # classification call - and only when the free wordlist did not already
+        # settle it.
+        asked_outright = False
+        if (
+            not patch_notes
+            and IMAGE_ENABLED
+            and imagegen.available(GEMINI_KEY)
+            and self._is_ally(message)
+            and not decide.wants_ascii(message.clean_content)
+            and not decide.is_picture_request(message.clean_content)
+            and not decide.is_art_request(message.clean_content)
+        ):
+            asked_outright = await self._asks_for_a_picture(transcript)
+            if asked_outright:
+                log.info("Ally is asking for a picture (phrasing no wordlist caught)")
+        image_mode = (
+            "" if patch_notes else self._offer_image(message, asked_outright)
+        )
         offered_image = bool(image_mode)
         if art and image_mode == "commissioned":
             # Same request, two renderers. The one that makes an actual picture

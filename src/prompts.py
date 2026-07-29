@@ -195,6 +195,30 @@ as harmed, starving, injured or suffering. Nothing bleak. Aim for something \
 harmless and absurd - an object, a place, an animal that is perfectly fine, \
 a situation that is stupid rather than sad."""
 
+# Wordlists cannot cover how people ask for a picture. Three phrasings got
+# missed live - "draw me a dog" (no picture noun), "create a picture of" (verb
+# not listed), "imagine X in azeroth" (neither) - and each miss looks to the
+# person asking like the feature is simply broken. So for the one person
+# allowed to commission one, the question is asked properly.
+PICTURE_INTENT_PROMPT = """\
+Below is the end of a Discord conversation. Decide one thing about the LAST \
+message only.
+
+Is that last message asking for an image, picture, or drawing to be made?
+
+It counts however it is phrased. All of these are YES:
+- "draw me a dog", "make a picture of X", "generate an image of X"
+- "imagine X", "picture X", "what would X look like"
+- "show me X", "I want to see X"
+- a bare description offered as something to render
+
+These are NO:
+- talking about a picture that already exists, or reacting to one
+- asking for text, an opinion, a list, or ASCII art specifically
+- anything that is not a request for something to be drawn
+
+Reply with exactly YES or NO. Nothing else."""
+
 # Appended when someone asked for a picture and is not getting one. Without
 # this the model, told nothing, wrote a picture description as its message and
 # posted it with nothing attached - the worst of both outcomes, and how this

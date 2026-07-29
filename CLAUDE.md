@@ -131,6 +131,15 @@ win.** `_art_instruction` runs first and returns early, so an ally asking
 was configured, funded, and simply never asked. A commission now outranks
 ASCII; a rolled offer does not, and asking for ASCII by name still gets ASCII.
 
+**Detecting that Jack asked is not a wordlist problem.** Three phrasings got
+missed live - "draw me a dog" names no picture noun, "create a picture of" used
+an unlisted verb, "imagine X in azeroth" matched nothing - and every miss reads
+from the outside as the feature being broken. Ally messages that the free
+wordlist does not settle get one small classification call
+(`PICTURE_INTENT_PROMPT`, `max_tokens=5`). Strangers stay on the wordlist,
+where a false negative is the desired outcome anyway. Do not "fix" a future
+miss by adding another verb.
+
 **A commission never depends on the model volunteering a directive.** It
 declined twice live - once because `IMAGE_OPTION` opens with "usually don't",
 which is right for an unprompted picture and fatal for a requested one. So a
