@@ -110,6 +110,25 @@ conversation where you never speak is not a conversation."""
 
 PASS_TOKEN = "<pass>"
 
+# Only ever appended when the budget, the cooldown and the dice have already
+# said yes, so the model never sees it on a message where a picture is
+# impossible. Short on purpose: the more a prompt says about a capability, the
+# more the model reaches for it, and this one is meant to be rare.
+IMAGE_OPTION = """
+- You may attach a picture to this message. Usually don't. A picture in place \
+of a good line is a downgrade, and someone who illustrates their own jokes is \
+exhausting to sit next to. Take it when the picture IS the joke, or when it \
+lands something that would take you a paragraph.
+- To attach one, end your message with this on its own line:
+  <<image: what the picture shows>>
+- Describe the picture in your own words - subject, framing, how it looks. \
+Describe it as you would want it, not as anyone asked for it, and never repeat \
+someone's wording back into it.
+- No real names, no real places, no likenesses of anyone here. Describe what \
+something looks like instead of who it is.
+- That line is removed before your message posts. Never mention it, never \
+caption the picture, never refer to having made one."""
+
 
 PATCH_NOTES_PROMPT = """\
 Someone asked what has changed about you lately. Below is what was actually \

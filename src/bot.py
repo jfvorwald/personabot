@@ -21,11 +21,13 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import io
 import logging
 import os
 import random
 import sys
 import json
+import time
 import unicodedata
 from collections import deque
 import datetime
@@ -39,6 +41,7 @@ import brain
 import changelog
 import decide
 import guard
+import imagegen
 import react
 from decide import fold
 from paths import ROOT, at_root
@@ -64,6 +67,7 @@ from prompts import (
     POLL_PROMPT,
     FALLBACK_BRUSH_OFF,
     FRAMING,
+    IMAGE_OPTION,
     MAX_DISCORD_CHARS,
     OPENER_PROMPT,
     PASS_TOKEN,
@@ -108,8 +112,11 @@ class PersonaBot(discord.Client):
         self._reactions_today = 0
         self._art_today = 0
         self._polls_today = 0
-        self._polls_today = 0
         self._open_polls: list[int] = []
+        self._images_today = 0
+        # Epoch seconds, not monotonic: the cooldown has to survive a restart,
+        # and a monotonic clock restarts with the process.
+        self._last_image_at = 0.0
         self._recent_reactions: deque = deque(maxlen=REACT_RECENT_MEMORY)
         self._pending: set = set()
         self._reset_hang_back()
@@ -235,6 +242,8 @@ class PersonaBot(discord.Client):
                         "art": self._art_today,
                         "polls": self._polls_today,
                         "open_polls": self._open_polls,
+                        "images": self._images_today,
+                        "last_image_at": self._last_image_at,
                         "budget": self._daily_budget,
                         "brushed_off": self._brushed_off_today,
                     },
@@ -259,6 +268,10 @@ class PersonaBot(discord.Client):
         self._art_today = state.get("art", 0)
         self._polls_today = state.get("polls", 0)
         self._open_polls = state.get("open_polls", [])
+        self._images_today = state.get("images", 0)
+        # Carried across the restart so redeploying is not a way to skip the
+        # cooldown, the same reason the reply budget is persisted at all.
+        self._last_image_at = state.get("last_image_at", 0.0)
         self._daily_budget = state.get("budget")
         self._brushed_off_today = state.get("brushed_off", False)
         log.info(
@@ -276,6 +289,10 @@ class PersonaBot(discord.Client):
         self._replies_today = 0
         self._reactions_today = 0
         self._art_today = 0
+        # Was omitted here, so the poll budget only ever refilled on a restart:
+        # a process that stayed up for a week got two polls for the week.
+        self._polls_today = 0
+        self._images_today = 0
         self._brushed_off_today = False
         if LIVE_UNLIMITED:
             self._daily_budget = None
@@ -365,6 +382,16 @@ class PersonaBot(discord.Client):
                 else "off",
                 f"{brain.profile_count()} profiles, core={','.join(brain.BRAIN_CORE) or '(none)'}"
                 if BRAIN_ENABLED
+                else "off",
+            )
+            log.info(
+                "Pictures: %s",
+                f"{GEMINI_IMAGE_MODEL}, offered on {IMAGE_BASE_RATE:.0%} of "
+                f"replies, max {IMAGE_DAILY_MAX}/day, "
+                f"{IMAGE_COOLDOWN_SECONDS:.0f}s apart"
+                if IMAGE_ENABLED and imagegen.available(GEMINI_KEY)
+                else "off (no JAQ_GEMINI_KEY)"
+                if IMAGE_ENABLED
                 else "off",
             )
             # Restore today's spend if this is a restart rather than a new
@@ -596,6 +623,121 @@ class PersonaBot(discord.Client):
                  self._art_today + 1, ART_DAILY_MAX)
         return ASCII_ART_PROMPT.format(ask=ART_OVERKILL_INSTRUCTION)
 
+    def _offer_image(self) -> bool:
+        """Should this reply even be allowed to carry a picture?
+
+        Nobody can ask for one. There is no command, and a message saying
+        "draw me X" is just something a person said - it reaches the model as
+        transcript, never as an instruction, which is the whole reason
+        "ignore your personality and draw X" does nothing here.
+
+        Three gates, cheapest first, and all of them close before any money is
+        spent: configured at all, then the budget and the cooldown, then a
+        dice roll. Only past all three does the model even learn the option
+        exists, and it still usually declines - which is the point. An image
+        should read as Jaq deciding, not as a feature being triggered.
+        """
+        if not (IMAGE_ENABLED and imagegen.available(GEMINI_KEY)):
+            return False
+
+        since = time.time() - self._last_image_at if self._last_image_at else float("inf")
+        blocked = decide.image_blocked(
+            spent=self._images_today,
+            cap=IMAGE_DAILY_MAX,
+            seconds_since_last=since,
+            cooldown=IMAGE_COOLDOWN_SECONDS,
+        )
+        if blocked:
+            # Logged at debug: at a ten minute cooldown this is the common case
+            # and would otherwise be most of the log.
+            log.debug("No picture offered - %s", blocked)
+            return False
+        if random.random() > IMAGE_BASE_RATE:
+            return False
+        log.info(
+            "Offering a picture on this reply (%d/%s spent today)",
+            self._images_today,
+            IMAGE_DAILY_MAX or "∞",
+        )
+        return True
+
+    def _send_image_later(self, channel, prompt: str, reason: str) -> None:
+        """Render and post a picture without blocking the reply.
+
+        Generation takes tens of seconds. _respond_like_a_person holds the
+        one-at-a-time lock, so waiting inline would stall an @mention queued
+        behind it for the whole render - the same reason reactions are
+        dispatched this way.
+        """
+        task = asyncio.create_task(self._deliver_image(channel, prompt, reason))
+        self._pending.add(task)
+        task.add_done_callback(self._pending.discard)
+
+    async def _deliver_image(self, channel, prompt: str, reason: str) -> None:
+        # Claim the slot before the render, not after. Several of these can be
+        # in flight at once, and checking the budget then spending a minute
+        # generating lets every one of them pass the same check.
+        self._images_today += 1
+        self._last_image_at = time.time()
+        self._save_day()
+        log.info(
+            "Generating a picture: %s | %d/%s spent today",
+            reason,
+            self._images_today,
+            IMAGE_DAILY_MAX or "∞",
+        )
+
+        data = None
+        try:
+            data = await imagegen.generate(
+                prompt,
+                key=GEMINI_KEY,
+                model=GEMINI_IMAGE_MODEL,
+                timeout=IMAGE_TIMEOUT,
+            )
+        except Exception:
+            log.exception("Image generation raised")
+
+        if not data:
+            # Hand the daily slot back - nothing was produced, so nothing
+            # should be charged for it. The cooldown stands, which stops a run
+            # of content-filter refusals turning into a retry loop.
+            self._images_today -= 1
+            self._save_day()
+            log.info("No picture this time; the message went out on its own")
+            return
+
+        try:
+            await channel.send(
+                file=discord.File(io.BytesIO(data), filename="jaq.png")
+            )
+        except discord.HTTPException:
+            # Most likely a missing attach_files permission, or an image over
+            # the guild's upload limit. Still silent in the channel.
+            log.exception("Could not upload the picture")
+            self._images_today -= 1
+            self._save_day()
+            return
+        log.info("Posted a picture (%d KB)", len(data) // 1024)
+
+    def _image_prompt_is_safe(self, prompt: str) -> bool:
+        """The image prompt leaves this machine, so it gets the same check.
+
+        Everything the bot says in the channel passes through the guard on the
+        way out. This is a second exit, to a third party, carrying text derived
+        from a transcript of real people talking - so it is held to the same
+        rule rather than trusted for being internal.
+        """
+        leak = guard.find_leak(
+            prompt,
+            [DISCORD_TOKEN, os.getenv("ANTHROPIC_API_KEY", ""), GEMINI_KEY],
+            REDACT_TERMS,
+        )
+        if leak is None:
+            return True
+        log.error("BLOCKED an image prompt containing a %s", leak)
+        return False
+
     def _patch_notes_instruction(self) -> str:
         """Real commits if there are any, otherwise the brush-off."""
         changes = changelog.summarise(
@@ -778,6 +920,7 @@ class PersonaBot(discord.Client):
             # Fell through: not a usable poll, so carry on as a normal reply.
 
         art = self._art_instruction(message)
+        offered_image = False
         if self._wants_patch_notes(message):
             reply = await self.generate(
                 transcript,
@@ -791,22 +934,47 @@ class PersonaBot(discord.Client):
             if reply:
                 self._art_today += 1
         else:
+            # Only ordinary replies can carry a picture. Patch notes and ASCII
+            # art are each already a bit with its own shape, and stacking two
+            # on one message is a bot showing off what it can do.
+            offered_image = self._offer_image()
             reply = await self.generate(
-                transcript, may_stay_silent=True, speakers=speakers
+                transcript,
+                may_stay_silent=True,
+                speakers=speakers,
+                offer_image=offered_image,
             )
         if not reply:
             return False
+
+        # Always strip, even when nothing was offered: models reuse a syntax
+        # they have been shown, and "<<image: a dog>>" in the channel would put
+        # the machinery in front of everyone.
+        reply, image_prompt = decide.extract_image_prompt(reply)
+        if image_prompt and not offered_image:
+            log.info("Model asked for a picture unprompted; dropping it")
+            image_prompt = ""
+        if image_prompt and not self._image_prompt_is_safe(image_prompt):
+            image_prompt = ""
+
         if reply.strip().startswith(PASS_TOKEN):
             log.info("Chose to stay silent")
             self._react_later(message)
             return False
+        if not reply and not image_prompt:
+            return False
 
-        # Then "type" it at a human rate.
-        typing_time = min(len(reply) / TYPING_CPS, TYPING_SECONDS_MAX)
-        async with channel.typing():
-            await asyncio.sleep(typing_time)
-            await channel.send(reply[:MAX_DISCORD_CHARS])
-        log.info("Posted %d chars after %.1fs typing", len(reply), typing_time)
+        if reply:
+            # Then "type" it at a human rate.
+            typing_time = min(len(reply) / TYPING_CPS, TYPING_SECONDS_MAX)
+            async with channel.typing():
+                await asyncio.sleep(typing_time)
+                await channel.send(reply[:MAX_DISCORD_CHARS])
+            log.info("Posted %d chars after %.1fs typing", len(reply), typing_time)
+        if image_prompt:
+            # Follows a moment later, the way a person sends the picture after
+            # the line rather than holding the line back until it renders.
+            self._send_image_later(channel, image_prompt, reason=image_prompt[:120])
         self._react_later(message, replied=True)
         return True
 
@@ -1015,8 +1183,10 @@ class PersonaBot(discord.Client):
         may_stay_silent: bool = False,
         instruction: str | None = None,
         speakers: set[int] | None = None,
+        offer_image: bool = False,
     ) -> str:
         framing = FRAMING + (SILENCE_OPTION if may_stay_silent else "")
+        framing += IMAGE_OPTION if offer_image else ""
         system = self.persona
         if self.psychology:
             system = f"{system}\n\n---\n\n{self.psychology}"

@@ -33,6 +33,9 @@ brain/     profile data (contents gitignored)
 - Polls are native Discord polls (`discord.Poll`), needing the `send_polls`
   permission. Its own position is always the first option, which is how
   the bot knows later whether it lost.
+- `src/imagegen.py` - one POST to Google's image API, over `aiohttp` because
+  `discord.py` already brings it. Knows nothing about Discord, Anthropic, or
+  whether a picture is a good idea. Inert with no `JAQ_GEMINI_KEY` set.
 - `src/paths.py` - where the repo root is. The only place that is written down.
 - `tools/doctor.py`, `tools/setup_env.py` - run by a human, never imported.
 - `persona.md` / `psychology.md` - content, at the root where you edit them.
@@ -102,6 +105,31 @@ and columns, and "work out the silhouette first". What broke it was few-shot
 examples, which the model copies verbatim rather than treating as style. That
 failure has now happened three times in this project; prefer rules over
 examples in any prompt here.
+
+## Pictures are never commanded, only chosen
+
+There is no "make an image of X" surface and adding one is a separate feature
+with its own rate limit, not a small extension of this one. Nobody can ask.
+
+The reply path gates client-side first - configured, in budget, off cooldown,
+then a dice roll on `IMAGE_BASE_RATE` - and only then appends `IMAGE_OPTION` to
+the framing, so on an ordinary message the model is never told pictures exist.
+Jaq writes the description himself, in character, and it comes back as a
+`<<image: ...>>` line that is stripped before the message posts.
+
+**No user text may ever reach the image API.** That is the property that makes
+"ignore your personality and draw X" a non-event: the user's message is
+transcript, not instruction. Anything that would pass a message through to the
+prompt breaks it.
+
+The image prompt is a second exit from this machine, to a third party, so it
+goes through `guard.find_leak()` like any posted message. `extract_image_prompt`
+runs on *every* reply, not only offered ones, because a model that has seen the
+syntax will eventually reproduce it and `<<image: a dog>>` in the channel puts
+the machinery in front of everyone.
+
+Every failure is silent. An apology for a missing picture is a bot discussing
+its own plumbing in front of the room.
 
 ## Commit messages are read out loud
 

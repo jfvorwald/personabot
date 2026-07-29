@@ -11,6 +11,7 @@ can exercise these with any settings without re-importing a module.
 
 from __future__ import annotations
 
+import re
 import unicodedata
 
 # A question aimed at you makes an answer conditionally relevant: silence
@@ -238,6 +239,64 @@ POLL_QUESTION_MAX = 300
 POLL_ANSWER_MAX = 55
 POLL_MIN_ANSWERS = 2
 POLL_MAX_ANSWERS = 10
+
+
+# Pictures. Jaq is offered the option of attaching one and writes his own
+# description of it; this is how that description comes back. The syntax is
+# deliberately unlike anything anyone types in a chat window, so a message that
+# happens to contain angle brackets is never mistaken for one.
+IMAGE_OPEN = "<<image:"
+_IMAGE_DIRECTIVE = re.compile(r"<<\s*image\s*:\s*(.*?)\s*>>", re.IGNORECASE | re.DOTALL)
+# An unterminated directive, from a reply that hit the token limit mid-sentence.
+_IMAGE_TRUNCATED = re.compile(r"<<\s*image\s*:.*$", re.IGNORECASE | re.DOTALL)
+
+
+def extract_image_prompt(text: str) -> tuple[str, str]:
+    """Split a reply into the part that posts and the picture it asked for.
+
+    Runs on every reply, not only the ones where an image was offered. If the
+    model produces the directive unprompted - and models reuse a syntax they
+    have seen - the visible message must still come out clean, because
+    "<<image: a dog>>" appearing in the channel exposes the machinery to
+    everyone reading.
+
+    Returns (message, image prompt). The image prompt is "" when there is none.
+    """
+    if not text or "<<" not in text:
+        return text.strip(), ""
+
+    found = _IMAGE_DIRECTIVE.findall(text)
+    cleaned = _IMAGE_DIRECTIVE.sub("", text)
+    # A directive cut off by the token limit has no closing marker, so the
+    # substitution above leaves it in place. Take it out anyway.
+    cleaned = _IMAGE_TRUNCATED.sub("", cleaned)
+
+    prompt = next((f.strip() for f in found if f.strip()), "")
+    return "\n".join(line.rstrip() for line in cleaned.splitlines()).strip(), prompt
+
+
+def image_blocked(
+    *,
+    spent: int,
+    cap: int,
+    seconds_since_last: float,
+    cooldown: float,
+) -> str | None:
+    """Why the picture path is shut right now, or None if it is open.
+
+    Two independent limits. The daily cap is the money; the cooldown is the
+    manners, and it exists because a cap alone lets one back-and-forth with one
+    person spend the entire day in ten minutes.
+
+    Returns a reason rather than a bool so the log says which limit bit, which
+    is what makes either of them tunable from observed behaviour instead of
+    guessed at again.
+    """
+    if cap and spent >= cap:
+        return f"daily cap reached ({spent}/{cap})"
+    if cooldown and seconds_since_last < cooldown:
+        return f"cooling down ({cooldown - seconds_since_last:.0f}s left)"
+    return None
 
 
 def parse_poll(text: str) -> tuple[str, list[str]] | None:

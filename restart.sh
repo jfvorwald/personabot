@@ -19,8 +19,8 @@ PATTERN='\.venv/bin/python src/bot\.py --live'
 # brain/people/*.md are deliberately NOT here: those are re-read from
 # disk on every reply, so editing a profile takes effect immediately.
 WATCHED=(src/bot.py src/brain.py src/decide.py src/react.py src/config.py
-         src/prompts.py src/persona.py src/changelog.py persona.md
-         psychology.md .env)
+         src/prompts.py src/persona.py src/changelog.py src/guard.py
+         src/imagegen.py persona.md psychology.md .env)
 
 # --- helpers ---------------------------------------------------------------
 

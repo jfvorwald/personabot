@@ -102,6 +102,36 @@ ART_OVERKILL_CHANCE = float(os.getenv("ART_OVERKILL_CHANCE", "0.12"))
 # A question long enough to be interesting does not need a diagram.
 ART_TRIVIAL_MAX_WORDS = int(os.getenv("ART_TRIVIAL_MAX_WORDS", "8"))
 
+# Pictures. Nobody can ask for one: there is no command surface and a request
+# in the channel is just another message Jaq reads. He is offered the option
+# occasionally and takes it when he wants to, which is what keeps an image
+# feeling like a choice rather than a feature people can operate.
+#
+# Optional in the real sense - with no JAQ_GEMINI_KEY set the whole path is
+# inert, which is the state anyone cloning this repo will be in.
+IMAGE_ENABLED = os.getenv("IMAGE_ENABLED", "true").lower() == "true"
+# Google AI Studio key. Named for the wider project rather than this bot,
+# because it is the same credential across it.
+GEMINI_KEY = os.getenv("JAQ_GEMINI_KEY", "")
+GEMINI_IMAGE_MODEL = os.getenv("JAQ_GEMINI_IMAGE_MODEL", "gemini-2.5-flash-image")
+# The money. A picture costs orders of magnitude more than a reply, so this is
+# a hard stop rather than a target.
+IMAGE_DAILY_MAX = int(os.getenv("IMAGE_DAILY_MAX", "15"))
+# The manners, and independent of the cap: without it a single back-and-forth
+# with one person can spend a whole day's pictures in ten minutes.
+IMAGE_COOLDOWN_SECONDS = float(os.getenv("IMAGE_COOLDOWN_SECONDS", "600"))
+# Roughly how often an eligible message is even offered the option.
+# Deliberately a number here rather than a word in the prompt: the model is a
+# poor judge of "occasionally", and this way the rate is tunable from the log
+# without touching anything the model reads.
+#
+# This is not the rate pictures appear at. Offered the option across twenty
+# replies, Jaq took it three times - so the two multiply. At 0.15 and ~30
+# replies a day that is a picture every day or two, which is the intended
+# feel. It was 0.08 first, which worked out at one every three days.
+IMAGE_BASE_RATE = float(os.getenv("IMAGE_BASE_RATE", "0.15"))
+IMAGE_TIMEOUT = float(os.getenv("IMAGE_TIMEOUT", "60"))
+
 # Polls. Escalating a disagreement into a formal vote is the joke, and it is
 # only funny while it stays rare - a channel with a poll in it every hour is
 # a channel nobody votes in. Discord requires a duration of at least an hour.

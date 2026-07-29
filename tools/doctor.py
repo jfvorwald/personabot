@@ -178,6 +178,37 @@ async def check_3_and_4_discord() -> bool:
     return result["ok"]
 
 
+async def check_5_images() -> bool:
+    """Optional, and skipped entirely when no key is configured.
+
+    Worth its own check because the failure it catches is invisible in normal
+    use: a wrong model name or a key without image access produces no picture,
+    and the bot is built to say nothing when that happens.
+    """
+    print("\n[5] Image generation (optional)")
+    sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(
+        os.path.abspath(__file__))), "src"))
+    import imagegen
+
+    key = os.getenv("JAQ_GEMINI_KEY", "")
+    if not imagegen.available(key):
+        print("  SKIP  no JAQ_GEMINI_KEY set - pictures are off, which is fine")
+        return True
+
+    model = os.getenv("JAQ_GEMINI_IMAGE_MODEL", "gemini-2.5-flash-image")
+    data = await imagegen.generate(
+        "a plain grey circle on a white background", key=key, model=model
+    )
+    if not data:
+        return fail(
+            "render",
+            f"no image came back from {model}",
+            "check the key at aistudio.google.com/apikey, and that "
+            "JAQ_GEMINI_IMAGE_MODEL names a current image model",
+        )
+    return ok("render", f"{model}, {len(data) // 1024} KB")
+
+
 async def main() -> int:
     print("personabot doctor")
     if not check_1_config():
@@ -185,6 +216,8 @@ async def main() -> int:
     if not await check_2_anthropic():
         return 1
     if not await check_3_and_4_discord():
+        return 1
+    if not await check_5_images():
         return 1
     print("\nAll checks passed. Run:  .venv/bin/python src/bot.py --now")
     return 0

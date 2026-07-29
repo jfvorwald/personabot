@@ -83,6 +83,8 @@ def persona_bot(bot_module):
     b._art_today = 0
     b._polls_today = 0
     b._open_polls = []
+    b._images_today = 0
+    b._last_image_at = 0.0
     b._replies_today = 0
     b._daily_budget = 100
     b._brushed_off_today = False
