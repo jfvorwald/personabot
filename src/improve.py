@@ -176,3 +176,179 @@ def read_records(path: str, since: str = "") -> list[dict]:
     except OSError:
         return []
     return out
+
+
+# --- the backlog ------------------------------------------------------------
+#
+# Proposals accumulate rather than being replaced. A snapshot rewritten every
+# run means anything not acted on immediately is gone by tomorrow, which turns
+# "I will get to that later" into "that never happened".
+#
+# Kept as markdown because a human edits it: the status marker in each heading
+# is how Jack says done or not doing this, and nothing here overwrites what he
+# has written underneath.
+
+STATUSES = ("open", "done", "dropped")
+
+_HEADING = re.compile(r"^##\s*\[(\w+)\]\s*(.+?)\s*$", re.MULTILINE)
+_FIELD = re.compile(r"^-\s*(\w[\w ]*?):\s*(.*)$")
+
+
+def slug(title: str) -> set:
+    """The content words of a title, for comparing two wordings of one idea."""
+    return {w for w in words_in(title) if len(w) > 3 and w not in COMMON}
+
+
+def same_proposal(a: str, b: str, threshold: float = 0.5) -> bool:
+    """Are these two titles the same suggestion, worded differently?
+
+    Exact matching does not survive the model rephrasing itself between runs -
+    "Cut the \"still\" tic" and "Cut the tic of saying still" are one item, and
+    two entries for it defeats the point of counting repeats.
+
+    Overlap against the *shorter* title, so a terse rewording of a wordy
+    proposal still matches.
+    """
+    left, right = slug(a), slug(b)
+    if not left or not right:
+        return False
+    return len(left & right) / min(len(left), len(right)) >= threshold
+
+
+def parse_proposals(text: str) -> list[dict]:
+    """Pull items out of what the model produced.
+
+    Forgiving by design: a missing field costs that field, not the proposal.
+    """
+    items = []
+    blocks = re.split(r"^##\s+", text, flags=re.MULTILINE)
+    for block in blocks[1:]:
+        lines = block.strip().splitlines()
+        if not lines:
+            continue
+        item = {"title": lines[0].strip(), "where": "", "why": "", "change": ""}
+        for line in lines[1:]:
+            for key in ("WHERE", "WHY", "CHANGE"):
+                if line.strip().upper().startswith(key + ":"):
+                    item[key.lower()] = line.split(":", 1)[1].strip()
+        if item["title"]:
+            items.append(item)
+    return items
+
+
+def parse_backlog(text: str) -> list[dict]:
+    """Read the backlog back, including anything a human added to it."""
+    items = []
+    for match in _HEADING.finditer(text or ""):
+        start = match.end()
+        nxt = _HEADING.search(text, start)
+        body = text[start : nxt.start() if nxt else len(text)]
+        item = {
+            "status": match.group(1).lower(),
+            "title": match.group(2).strip(),
+            "where": "",
+            "why": "",
+            "change": "",
+            "first": "",
+            "last": "",
+            "seen": 1,
+            "notes": "",
+        }
+        notes = []
+        for line in body.strip().splitlines():
+            field = _FIELD.match(line.strip())
+            if field:
+                key, value = field.group(1).strip().lower(), field.group(2).strip()
+                if key in ("where", "why", "change", "first", "last"):
+                    item[key] = value
+                    continue
+                if key == "seen":
+                    item["seen"] = int(value.split()[0]) if value.split() else 1
+                    continue
+            if line.strip():
+                notes.append(line.rstrip())
+        item["notes"] = "\n".join(notes)
+        items.append(item)
+    return items
+
+
+def merge_backlog(existing: list[dict], incoming: list[dict], today: str) -> list[dict]:
+    """Fold today's proposals into what is already there.
+
+    A proposal that keeps coming back is worth knowing about, so a repeat bumps
+    a counter rather than adding a duplicate. A decision already made is never
+    reopened: something marked done or dropped stays that way even if the model
+    suggests it again, because reversing Jack's call silently is worse than
+    losing a suggestion.
+    """
+    kept = [dict(item) for item in existing]
+    for item in incoming:
+        found = next(
+            (k for k in kept if same_proposal(k["title"], item["title"])), None
+        )
+        if found is not None:
+            found["seen"] = found.get("seen", 1) + 1
+            found["last"] = today
+            # Only fill in fields that were empty; never overwrite a human edit.
+            for field in ("where", "why", "change"):
+                if not found.get(field):
+                    found[field] = item.get(field, "")
+            continue
+        kept.append({
+            "status": "open",
+            "title": item["title"],
+            "where": item.get("where", ""),
+            "why": item.get("why", ""),
+            "change": item.get("change", ""),
+            "first": today,
+            "last": today,
+            "seen": 1,
+            "notes": "",
+        })
+    # Open first, then most-repeated: the thing suggested five times and still
+    # not done is the one worth looking at.
+    order = {"open": 0, "dropped": 1, "done": 2}
+    return sorted(
+        kept,
+        key=lambda i: (order.get(i.get("status", "open"), 0), -i.get("seen", 1)),
+    )
+
+
+def render_backlog(items: list[dict]) -> str:
+    """Write it back out, human-editable.
+
+    Change [open] to [done] or [dropped] to record a decision. Anything written
+    underneath an item is kept.
+    """
+    out = [
+        "# Improvement backlog",
+        "",
+        "Proposals, accumulated. **Nothing here has been applied.**",
+        "",
+        "Change `[open]` to `[done]` or `[dropped]` to record a decision - a",
+        "decision is never reopened, even if the same thing gets proposed again.",
+        "Anything you write under an item is kept.",
+        "",
+    ]
+    for item in items:
+        out.append(f"## [{item.get('status', 'open')}] {item['title']}")
+        if item.get("where"):
+            out.append(f"- where: {item['where']}")
+        if item.get("why"):
+            out.append(f"- why: {item['why']}")
+        if item.get("change"):
+            out.append(f"- change: {item['change']}")
+        seen = item.get("seen", 1)
+        out.append(f"- seen: {seen} time{'s' if seen != 1 else ''}")
+        # Written as their own fields rather than folded into the line above:
+        # this file is read back and merged, and a date parsed out of prose is
+        # a date that stops parsing the first time someone edits the prose.
+        if item.get("first"):
+            out.append(f"- first: {item['first']}")
+        if item.get("last"):
+            out.append(f"- last: {item['last']}")
+        if item.get("notes"):
+            out.append("")
+            out.append(item["notes"])
+        out.append("")
+    return "\n".join(out)

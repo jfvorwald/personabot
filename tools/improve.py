@@ -7,12 +7,17 @@
 Reads what the bot actually posted, measures it, and asks for proposals. It
 writes two things and changes nothing:
 
-    improvements/log/YYYY-MM-DD.md   the day's findings, kept
-    improvements/PROPOSALS.md        the open list, rewritten each run
+    improvements/log/YYYY-MM-DD.md   the day's findings, kept as written
+    improvements/BACKLOG.md          accumulated proposals, merged not replaced
 
-Nothing here takes effect. Jack reads the proposals and decides, the same
-contract brain.py has, and for the same reason: generated content about a
-private channel gets reviewed before it goes anywhere near the bot.
+Nothing here takes effect, and nothing is acted on because it was suggested.
+Proposals pile up and wait; Jack marks them [done] or [dropped] when he decides,
+and a decision is never reopened. A proposal that keeps recurring carries a
+count rather than a duplicate, which makes "suggested five times, still not
+done" visible instead of invisible.
+
+Same contract brain.py has, for the same reason: generated content about a
+private channel gets reviewed by a human before it goes near the bot.
 """
 
 from __future__ import annotations
@@ -196,19 +201,38 @@ async def main() -> int:
 
     today = datetime.datetime.now(TIMEZONE).date().isoformat()
     os.makedirs(at_root(f"{OUT_DIR}/log"), exist_ok=True)
+
+    # The day's raw output, kept whatever happens to the backlog.
     entry = f"# {today}\n\n## Measured\n\n```\n{measurements}```\n\n## Proposed\n\n{proposals}\n"
     with open(at_root(f"{OUT_DIR}/log/{today}.md"), "w", encoding="utf-8") as f:
         f.write(entry)
-    with open(at_root(f"{OUT_DIR}/PROPOSALS.md"), "w", encoding="utf-8") as f:
-        f.write(
-            f"# Open proposals\n\nFrom the last {args.hours}h, generated {today}.\n"
-            f"Nothing here has been applied.\n\n{proposals}\n"
-        )
+
+    # Merged into the backlog rather than replacing it. Anything not acted on
+    # today is still there tomorrow, and a proposal that keeps coming back
+    # shows a count instead of a duplicate.
+    backlog_path = at_root(f"{OUT_DIR}/BACKLOG.md")
+    try:
+        with open(backlog_path, encoding="utf-8") as f:
+            existing = improve.parse_backlog(f.read())
+    except OSError:
+        existing = []
+    merged = improve.merge_backlog(
+        existing, improve.parse_proposals(proposals), today
+    )
+    with open(backlog_path, "w", encoding="utf-8") as f:
+        f.write(improve.render_backlog(merged))
+
+    fresh = [i for i in merged if i.get("first") == today and i.get("seen") == 1]
+    repeats = [i for i in merged if i.get("status") == "open" and i.get("seen", 1) > 1]
 
     print("\n" + "=" * 70)
     print(proposals)
     print("=" * 70)
-    print(f"\nWritten to {OUT_DIR}/PROPOSALS.md and {OUT_DIR}/log/{today}.md")
+    print(f"\n{len(fresh)} new, {len(repeats)} already open and proposed again.")
+    for item in repeats:
+        print(f"  x{item['seen']}  {item['title']}")
+    print(f"\nBacklog: {OUT_DIR}/BACKLOG.md   Today: {OUT_DIR}/log/{today}.md")
+    print("Nothing applied. Mark items [done] or [dropped] there to decide them.")
     return 0
 
 

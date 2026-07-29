@@ -174,3 +174,101 @@ def test_it_does_not_judge_the_jokes():
     import prompts
 
     assert "not yours to" in prompts.IMPROVE_PROMPT
+
+
+# --- the backlog accumulates ------------------------------------------------
+#
+# A snapshot rewritten every run means anything not acted on immediately is
+# gone by tomorrow, which turns "I'll get to that later" into "that never
+# happened". These are the properties that stop that.
+
+
+PROPOSAL = """## Cut the "still" tic
+WHERE: persona.md
+WHY: "still" appears in 43% of his messages
+CHANGE: add a rule against opening with it
+
+## Retire the 58 points construction
+WHERE: persona.md
+WHY: used verbatim three times
+CHANGE: remove it
+"""
+
+
+def test_proposals_are_parsed():
+    items = improve.parse_proposals(PROPOSAL)
+    assert len(items) == 2
+    assert items[0]["where"] == "persona.md"
+    assert "43%" in items[0]["why"]
+
+
+def test_a_proposal_missing_fields_still_parses():
+    """A missing field costs that field, not the proposal."""
+    items = improve.parse_proposals("## Just a title\n")
+    assert len(items) == 1 and items[0]["title"] == "Just a title"
+
+
+def test_a_backlog_round_trips():
+    items = improve.merge_backlog([], improve.parse_proposals(PROPOSAL), "2026-07-28")
+    reparsed = improve.parse_backlog(improve.render_backlog(items))
+    assert len(reparsed) == 2
+    assert all(i["status"] == "open" for i in reparsed)
+    assert reparsed[0]["first"] == "2026-07-28"
+
+
+def test_a_repeat_bumps_a_count_instead_of_duplicating():
+    """"Suggested five times and still not done" is the useful signal."""
+    day1 = improve.merge_backlog([], improve.parse_proposals(PROPOSAL), "2026-07-28")
+    day2 = improve.merge_backlog(day1, improve.parse_proposals(PROPOSAL), "2026-07-29")
+    assert len(day2) == 2
+    assert all(i["seen"] == 2 for i in day2)
+    assert all(i["last"] == "2026-07-29" for i in day2)
+    assert all(i["first"] == "2026-07-28" for i in day2)
+
+
+def test_a_reworded_repeat_is_still_the_same_item():
+    day1 = improve.merge_backlog([], improve.parse_proposals(PROPOSAL), "2026-07-28")
+    reworded = improve.parse_proposals('## Cut the tic of saying "still"\n')
+    day2 = improve.merge_backlog(day1, reworded, "2026-07-29")
+    assert len(day2) == 2, "a rewording must not become a second entry"
+
+
+def test_a_decision_is_never_reopened():
+    """Silently reversing Jack's call is worse than losing a suggestion."""
+    day1 = improve.merge_backlog([], improve.parse_proposals(PROPOSAL), "2026-07-28")
+    day1[0]["status"] = "dropped"
+    day2 = improve.merge_backlog(day1, improve.parse_proposals(PROPOSAL), "2026-07-29")
+    dropped = [i for i in day2 if i["status"] == "dropped"]
+    assert len(dropped) == 1
+    assert dropped[0]["seen"] == 2, "it still counts that it came up again"
+
+
+def test_human_notes_survive_a_merge():
+    day1 = improve.merge_backlog([], improve.parse_proposals(PROPOSAL), "2026-07-28")
+    rendered = improve.render_backlog(day1).replace(
+        "- last: 2026-07-28",
+        "- last: 2026-07-28\n\nnot yet, see how it reads first",
+        1,
+    )
+    reparsed = improve.parse_backlog(rendered)
+    day2 = improve.merge_backlog(reparsed, improve.parse_proposals(PROPOSAL), "2026-07-29")
+    assert any("not yet, see how it reads first" in i.get("notes", "") for i in day2)
+
+
+def test_a_human_edit_is_not_overwritten():
+    day1 = improve.merge_backlog([], improve.parse_proposals(PROPOSAL), "2026-07-28")
+    day1[0]["change"] = "do it my way instead"
+    day2 = improve.merge_backlog(day1, improve.parse_proposals(PROPOSAL), "2026-07-29")
+    assert day2[0]["change"] == "do it my way instead"
+
+
+def test_open_items_sort_before_decided_ones():
+    items = improve.merge_backlog([], improve.parse_proposals(PROPOSAL), "2026-07-28")
+    items[0]["status"] = "done"
+    ordered = improve.merge_backlog(items, [], "2026-07-29")
+    assert ordered[0]["status"] == "open"
+
+
+def test_an_empty_backlog_file_is_fine():
+    assert improve.parse_backlog("") == []
+    assert improve.parse_backlog("# Improvement backlog\n\nnothing yet\n") == []

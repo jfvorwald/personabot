@@ -48,9 +48,21 @@ nothing.
 
 ```
 improvements/observations.jsonl   appended constantly by the live bot
-improvements/log/YYYY-MM-DD.md    one entry per run, kept
-improvements/PROPOSALS.md         the current open list, rewritten each run
+improvements/log/YYYY-MM-DD.md    one entry per run, kept as written
+improvements/BACKLOG.md           accumulated proposals, merged not replaced
 ```
+
+The backlog accumulates on purpose. A snapshot rewritten each run means
+anything not acted on immediately is gone by tomorrow, which quietly turns "I
+will get to that later" into "that never happened".
+
+- A proposal that comes back carries a **count** rather than becoming a
+  duplicate, including when the model rewords it. "Suggested five times and
+  still not done" is the most useful thing the file can tell you.
+- Mark an item `[done]` or `[dropped]` to decide it. **A decision is never
+  reopened**, even if the same suggestion turns up again - silently reversing
+  a call you made is worse than losing a suggestion.
+- Anything you write underneath an item is kept across merges.
 
 All three are gitignored. They contain channel content and they describe how
 Jaq works, which is exactly what the confidentiality directive exists to

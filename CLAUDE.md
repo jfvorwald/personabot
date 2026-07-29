@@ -227,12 +227,21 @@ Do not add an exception for OBEY there.
 
 ## Self improvement proposes, it never applies
 
+**Proposals are recorded, not acted on.** When a run produces suggestions,
+surface them to Jack and add them to the backlog - do not apply them because
+they were suggested, and do not apply a batch because he approved one. He picks
+individually.
+
 `src/improve.py` measures what the model cannot see about itself - a reply is a
 fresh single-turn call with no memory of the last forty, so a tic is invisible
 from the inside. The live bot appends one cheap line per decision to
 `improvements/observations.jsonl` (no API call). `tools/improve.py` aggregates
-daily and writes proposals. **Nothing there ever takes effect** - same contract
-as `brain.py`. Surface new proposals to Jack in chat; he approves or corrects.
+daily and merges into `improvements/BACKLOG.md`, which **accumulates rather
+than being replaced** - a rewritten snapshot means anything deferred is gone
+tomorrow. A recurring proposal bumps a count instead of duplicating, so
+"suggested five times, still not done" is visible. A `[done]` or `[dropped]`
+decision is never reopened, and human notes under an item survive a merge.
+**Nothing there ever takes effect** - same contract as `brain.py`.
 
 Everything under `improvements/` except the README is gitignored: it is derived
 from a private channel and it describes how Jaq works.

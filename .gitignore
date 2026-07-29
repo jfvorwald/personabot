@@ -25,6 +25,7 @@ contexts/*.md
 improvements/observations.jsonl
 improvements/log/
 improvements/PROPOSALS.md
+improvements/BACKLOG.md
 
 .venv/
 __pycache__/
