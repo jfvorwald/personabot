@@ -54,6 +54,16 @@ LIVE_DAILY_MIN = int(os.getenv("LIVE_DAILY_MIN", "4"))
 LIVE_DAILY_MAX = int(os.getenv("LIVE_DAILY_MAX", "10"))
 LIVE_UNLIMITED = LIVE_DAILY_MAX <= 0
 
+# The budget above is a soft one: an @mention from a human and anything an ally
+# says are answered past it, because the budget exists to stop two bots looping
+# forever and neither of those is that. The effect is that a busy day runs well
+# over - 51 replies against a budget of 32 on the day this was added.
+#
+# This is the ceiling on that overage, as a multiple of the day's budget, and
+# nothing crosses it. A friend who has already had three times a full day of
+# replies is not being blanked; the day is simply over.
+LIVE_HARD_CAP_MULTIPLIER = float(os.getenv("LIVE_HARD_CAP_MULTIPLIER", "3"))
+
 # Counterpart bots: matched case-insensitively against the Discord display
 # name. These bypass the ignore-other-bots rule so the two personas can talk at
 # all - but they are NOT guaranteed a reply. Letting one sit unanswered is

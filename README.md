@@ -366,6 +366,9 @@ person; live mode at 4-10 messages/day is a small multiple of that. Knobs in
 - `MODEL=claude-sonnet-5` - cheaper still if you want to cut it further.
 - `HISTORY_LIMIT` - lower it to shrink the input.
 - `LIVE_DAILY_MAX` - the ceiling on live mode. This is the one that matters.
+- `LIVE_HARD_CAP_MULTIPLIER` - the ceiling on the *overage*. The daily budget
+  is soft, because @mentions from humans and anything an ally says are answered
+  past it, so a busy day runs well over. Nothing crosses this one.
 
 ## Tuning the conversation
 

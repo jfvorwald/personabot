@@ -352,6 +352,21 @@ class PersonaBot(discord.Client):
             self._replies_today >= self._daily_budget
         )
 
+    def _hard_capped(self) -> bool:
+        """Past the ceiling that even a mention or an ally does not cross.
+
+        The daily budget is soft on purpose - being @mentioned by name and
+        being spoken to by a friend both bypass it, which is what stops the
+        rationing from ever reading as blanking someone. The cost is that a
+        busy day has no upper bound at all, and one ran 60% over.
+
+        This is the bound. Exempt traffic still ignores the budget, it just
+        cannot ignore this.
+        """
+        if self._daily_budget is None or LIVE_HARD_CAP_MULTIPLIER <= 0:
+            return False
+        return self._replies_today >= self._daily_budget * LIVE_HARD_CAP_MULTIPLIER
+
     async def on_ready(self):
         log.info("Logged in as %s (id=%s)", self.user, self.user.id)
         if self.post_now:
@@ -370,8 +385,10 @@ class PersonaBot(discord.Client):
                 LIVE_REPLY_TO_BOTS,
             )
             log.info(
-                "Mentions: always answered. Joining: after %d-%d messages, "
-                "giving up past %d.",
+                "Mentions: answered past the budget, up to %s. "
+                "Joining: after %d-%d messages, giving up past %d.",
+                "no limit" if LIVE_UNLIMITED or LIVE_HARD_CAP_MULTIPLIER <= 0
+                else f"{LIVE_HARD_CAP_MULTIPLIER:g}x the day's budget",
                 JOIN_AFTER_MIN,
                 JOIN_AFTER_MAX,
                 JOIN_WINDOW_MESSAGES,
@@ -459,13 +476,24 @@ class PersonaBot(discord.Client):
             # looping forever; neither of those is that.
             human_mention = mentioned and not message.author.bot
             exempt = human_mention or self._is_ally(message)
-            if self._out_of_budget() and not exempt:
+            # The hard cap is checked first because nothing is exempt from it.
+            if self._hard_capped() or (self._out_of_budget() and not exempt):
+                capped = self._hard_capped()
                 if self._brushed_off_today:
-                    log.info("Out of replies for today; ignoring")
+                    log.info(
+                        "%s for today (%d replies); ignoring",
+                        "Hard capped" if capped else "Out of replies",
+                        self._replies_today,
+                    )
                     return
+                # A day spent entirely on mentions and allies never trips the
+                # soft cap, so this can be the first thing anyone hears about
+                # it. Say something once, then go quiet.
                 self._brushed_off_today = True
                 log.info(
-                    "Budget of %d used up; sending sign-off", self._daily_budget
+                    "%s at %d replies; sending sign-off",
+                    "Hard cap reached" if capped else f"Budget of {self._daily_budget} used up",
+                    self._replies_today,
                 )
                 try:
                     async with message.channel.typing():

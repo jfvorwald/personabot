@@ -120,3 +120,63 @@ def test_state_file_is_readable(stateful_bot, tmp_path):
     assert written["day"] == "2026-07-28"
     assert written["replies"] == 3
     assert written["reactions"] == 1
+
+
+# --- the ceiling on a soft budget -------------------------------------------
+#
+# The daily budget is deliberately soft: an @mention from a human and anything
+# an ally says are answered past it, because rationing must never read as
+# blanking a friend. The cost is that a busy day has no upper bound - one ran
+# 51 replies against a budget of 32. This is the bound.
+
+
+def _capped(bot, replies, budget=32, multiplier=3.0, bot_module=None, monkeypatch=None):
+    monkeypatch.setattr(bot_module, "LIVE_HARD_CAP_MULTIPLIER", multiplier)
+    bot._daily_budget = budget
+    bot._replies_today = replies
+    return bot._hard_capped()
+
+
+def test_under_the_ceiling_is_not_capped(persona_bot, bot_module, monkeypatch):
+    assert _capped(persona_bot, 95, bot_module=bot_module, monkeypatch=monkeypatch) is False
+
+
+def test_the_ceiling_is_three_times_the_budget(persona_bot, bot_module, monkeypatch):
+    assert _capped(persona_bot, 96, bot_module=bot_module, monkeypatch=monkeypatch) is True
+
+
+def test_well_past_the_ceiling_stays_capped(persona_bot, bot_module, monkeypatch):
+    assert _capped(persona_bot, 500, bot_module=bot_module, monkeypatch=monkeypatch) is True
+
+
+def test_the_soft_budget_still_bites_first(persona_bot, bot_module, monkeypatch):
+    """Ordinary traffic stops at the budget; only exempt traffic gets as far
+    as the ceiling, which is the whole point of having two numbers."""
+    monkeypatch.setattr(bot_module, "LIVE_HARD_CAP_MULTIPLIER", 3.0)
+    persona_bot._daily_budget = 32
+    persona_bot._replies_today = 40
+    assert persona_bot._out_of_budget() is True
+    assert persona_bot._hard_capped() is False
+
+
+def test_an_unlimited_budget_has_no_ceiling(persona_bot, bot_module, monkeypatch):
+    """LIVE_DAILY_MAX=0 means no limit, and three times no limit is no limit."""
+    monkeypatch.setattr(bot_module, "LIVE_HARD_CAP_MULTIPLIER", 3.0)
+    persona_bot._daily_budget = None
+    persona_bot._replies_today = 10_000
+    assert persona_bot._hard_capped() is False
+
+
+def test_a_zero_multiplier_disables_the_ceiling(persona_bot, bot_module, monkeypatch):
+    assert _capped(
+        persona_bot, 10_000, multiplier=0, bot_module=bot_module, monkeypatch=monkeypatch
+    ) is False
+
+
+def test_the_multiplier_is_configurable(persona_bot, bot_module, monkeypatch):
+    assert _capped(
+        persona_bot, 64, multiplier=2.0, bot_module=bot_module, monkeypatch=monkeypatch
+    ) is True
+    assert _capped(
+        persona_bot, 63, multiplier=2.0, bot_module=bot_module, monkeypatch=monkeypatch
+    ) is False
