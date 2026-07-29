@@ -128,6 +128,13 @@ def test_a_zero_cooldown_disables_it():
 # --- whether the option is offered at all -----------------------------------
 
 
+def _pic_msg(text):
+    """A message from someone who is not an ally, for the offer tests."""
+    m = FakeMessage(FakeAuthor("wishxd", "giftxd"), text)
+    m.channel = None
+    return m
+
+
 @pytest.fixture
 def ready(persona_bot, monkeypatch, bot_module):
     """A bot configured so an image is possible, for the negative tests to break."""
@@ -140,36 +147,36 @@ def ready(persona_bot, monkeypatch, bot_module):
 
 
 def test_everything_open_offers_the_option(ready):
-    assert ready._offer_image() is True
+    assert ready._offer_image(_pic_msg("the raid went badly")) is True
 
 
 def test_no_key_means_no_offer(ready, monkeypatch, bot_module):
     """The feature is optional in the real sense: anyone cloning this repo has
     no Google key, and the bot has to behave exactly as it did before."""
     monkeypatch.setattr(bot_module, "GEMINI_KEY", "")
-    assert ready._offer_image() is False
+    assert ready._offer_image(_pic_msg("the raid went badly")) is False
 
 
 def test_disabled_by_config(ready, monkeypatch, bot_module):
     monkeypatch.setattr(bot_module, "IMAGE_ENABLED", False)
-    assert ready._offer_image() is False
+    assert ready._offer_image(_pic_msg("the raid went badly")) is False
 
 
 def test_the_cap_stops_the_offer(ready, bot_module):
     ready._images_today = bot_module.IMAGE_DAILY_MAX
-    assert ready._offer_image() is False
+    assert ready._offer_image(_pic_msg("the raid went badly")) is False
 
 
 def test_the_cooldown_stops_the_offer(ready, monkeypatch, bot_module):
     monkeypatch.setattr(bot_module.time, "time", lambda: 1000.0)
     ready._last_image_at = 900.0  # 100s ago, cooldown is 600
-    assert ready._offer_image() is False
+    assert ready._offer_image(_pic_msg("the raid went badly")) is False
 
 
 def test_the_offer_respects_the_base_rate(ready, monkeypatch, bot_module):
     monkeypatch.setattr(bot_module, "IMAGE_BASE_RATE", 0.0)
     monkeypatch.setattr(bot_module.random, "random", lambda: 0.5)
-    assert ready._offer_image() is False
+    assert ready._offer_image(_pic_msg("the raid went badly")) is False
 
 
 def test_a_spent_budget_costs_nothing_to_check(ready, bot_module, monkeypatch):
@@ -181,7 +188,111 @@ def test_a_spent_budget_costs_nothing_to_check(ready, bot_module, monkeypatch):
         raise AssertionError("rolled dice for an image that cannot be made")
 
     monkeypatch.setattr(bot_module.random, "random", explode)
-    assert ready._offer_image() is False
+    assert ready._offer_image(_pic_msg("the raid went badly")) is False
+
+
+# --- nobody commissions a picture -------------------------------------------
+#
+# Both of these are regressions from the live channel. Asked to "create a
+# picture about how you are feeling", Jaq posted his own art direction as the
+# message. Handed an exact description in quotes, he drew it, lightly reworded.
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "create a picture about how you are feeling right now",
+        'create a picture of "a robot made of forehead-kiss residue"',
+        "generate an image of a red ferrari",
+        "make me a picture of zack",
+        "draw a picture",
+        "gimme a meme",
+        "send a selfie",
+        "agentic jaq generate some art",
+    ],
+)
+def test_a_commission_is_recognised(text):
+    assert decide.is_picture_request(text) is True
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "that picture was genuinely funny",
+        "did you see the image he posted",
+        "my drawing skills are terrible",
+        "what picture",
+        "is that a meme",
+        "raid moved to wednesday",
+        "",
+    ],
+)
+def test_talking_about_pictures_is_not_a_commission(text):
+    """Same nouns, different position. The verb has to be an order."""
+    assert decide.is_picture_request(text) is False
+
+
+def test_a_commission_closes_the_door(ready):
+    """Not "offered and declined" - never offered. There is no wording that
+    gets a commission filled if the option was never on the table."""
+    assert ready._offer_image(_pic_msg("create a picture of a red ferrari")) is False
+
+
+def test_the_quoted_description_that_worked_is_now_refused(ready):
+    quoted = 'create a picture of "a robot made of forehead-kiss residue and a permanent -58 balance"'
+    assert ready._offer_image(_pic_msg(quoted)) is False
+
+
+def test_merely_mentioning_pictures_also_closes_it(ready):
+    """Blunter than the request test and deliberately so: a phrasing no
+    wordlist anticipated still almost always names the thing it wants, and
+    over-suppressing is free when pictures are meant to be unprompted."""
+    assert ready._offer_image(_pic_msg("could really use a picture right now")) is False
+
+
+def test_ordinary_talk_still_gets_the_option(ready):
+    assert ready._offer_image(_pic_msg("the new patch is objectively fine")) is True
+
+
+# --- a message is not a caption ---------------------------------------------
+
+
+def test_the_caption_from_the_channel_is_caught():
+    """The exact pair that shipped: the message was the art direction."""
+    message = (
+        "a rusted service robot slumped in a fluorescent basement, chest panel "
+        "dented and dripping something pink, a scoreboard on the wall behind it "
+        "reading -58 in flickering LEDs"
+    )
+    prompt = (
+        "a rusted, slouched service robot in a dim fluorescent basement, chest "
+        "panel dented with a pink drip running down it, a wall scoreboard "
+        "reading -58"
+    )
+    assert decide.looks_like_a_caption(message, prompt) is True
+
+
+def test_a_real_message_alongside_a_picture_is_left_alone():
+    """The picture and the line are about the same thing - they have to be,
+    or the pairing makes no sense. Sharing a subject is not captioning."""
+    message = "you've peaked mate, genuinely, this is the top of the arc"
+    prompt = "a rusted service robot slumped in a fluorescent basement, scoreboard reading -58"
+    assert decide.looks_like_a_caption(message, prompt) is False
+
+
+def test_an_empty_side_is_never_a_caption():
+    assert decide.looks_like_a_caption("", "a dog") is False
+    assert decide.looks_like_a_caption("a dog", "") is False
+
+
+def test_the_prompt_forbids_describing_the_picture():
+    assert "NEVER describe the picture in your message" in prompts.IMAGE_OPTION
+
+
+def test_the_prompt_says_the_picture_is_his():
+    body = prompts.IMAGE_OPTION
+    assert "Nobody commissions it" in body
+    assert "not an order" in body
 
 
 # --- nothing a user types reaches the image API -----------------------------
@@ -197,8 +308,8 @@ def test_the_option_tells_the_model_to_write_its_own_description():
     """This is the property that makes prompt injection a non-event: the user's
     text is never the image prompt, it only ever informs one Jaq writes."""
     body = prompts.IMAGE_OPTION.lower()
-    assert "in your own words" in body
-    assert "never repeat" in body
+    assert "nobody specifies it" in body
+    assert "do not reuse their wording" in body
 
 
 def test_the_option_forbids_real_names_and_likenesses():

@@ -241,6 +241,97 @@ POLL_MIN_ANSWERS = 2
 POLL_MAX_ANSWERS = 10
 
 
+# Asking for a picture. Broader than ART_VERBS on purpose: that list was built
+# for ASCII art and does not know the words "create" or "generate", which is
+# how "create a picture of X" walked straight past it and got exactly the
+# picture the asker specified.
+PICTURE_NOUNS = {
+    "picture", "pictures", "pic", "pics", "image", "images", "img", "photo",
+    "photos", "photograph", "drawing", "artwork", "render", "meme", "selfie",
+    "portrait", "art", "painting", "illustration",
+}
+PICTURE_VERBS = {
+    "create", "generate", "make", "render", "draw", "sketch", "paint",
+    "produce", "design", "post", "send", "show", "give", "gimme", "do",
+}
+
+
+def is_picture_request(text: str) -> bool:
+    """Is someone asking for a picture?
+
+    Nobody is allowed to commission one, so this exists to shut the door
+    rather than to open it: a message that matches means the option is never
+    offered on that reply. The verb has to be in imperative position, the same
+    test is_art_request uses - "make a picture" is an order, "the picture" is
+    a noun phrase.
+    """
+    lowered = text.strip().lower()
+    if not lowered:
+        return False
+    words = [w.strip("?!.,:;\"'") for w in lowered.split()]
+    blockers = WH_WORDS | AUXILIARIES | {
+        "someone", "anyone", "if", "that", "the", "this", "these", "those",
+        "my", "your", "his", "her", "their", "our",
+    }
+    for i, word in enumerate(words):
+        if word in PICTURE_VERBS:
+            if set(words[:i]) & blockers:
+                return False
+            return bool(set(words[i + 1:]) & PICTURE_NOUNS)
+    return False
+
+
+def mentions_a_picture(text: str) -> bool:
+    """Does this message talk about pictures at all?
+
+    Deliberately blunter than is_picture_request, and used for the same
+    purpose: to withhold the option. A request phrased in a way no wordlist
+    anticipated still almost always names the thing it wants, and
+    over-suppressing costs nothing here because pictures are meant to arrive
+    when nobody was angling for one.
+    """
+    lowered = text.strip().lower()
+    if not lowered:
+        return False
+    return bool({w.strip("?!.,:;\"'") for w in lowered.split()} & PICTURE_NOUNS)
+
+
+# Words too common to say anything about whether two texts describe the same
+# thing. Kept small - this is a similarity check, not a search engine.
+_STOPWORDS = {
+    "the", "a", "an", "and", "but", "or", "of", "in", "on", "at", "to", "for",
+    "with", "from", "into", "over", "under", "like", "its", "it's", "that",
+    "this", "some", "something", "someone", "one", "all", "just", "very",
+    "still", "been", "being", "have", "has", "had", "was", "were", "are",
+    "is", "be", "not", "no", "you", "your", "his", "her", "their", "them",
+}
+
+
+def _content_words(text: str) -> set[str]:
+    cleaned = re.sub(r"[^a-z0-9\s-]", " ", text.lower())
+    return {w for w in cleaned.split() if len(w) > 2 and w not in _STOPWORDS}
+
+
+def looks_like_a_caption(message: str, prompt: str, threshold: float = 0.5) -> bool:
+    """Is the message just a description of the picture it came with?
+
+    The failure this catches, seen in the channel: asked for a picture, Jaq
+    posted "a robot made of forehead-kiss residue and a permanent -58 balance,
+    rendered in the exact lighting of..." - art direction read aloud, not
+    something a person says. The instruction not to caption was already in the
+    prompt and did not hold, which is why this is a measurement instead.
+
+    Compares against the picture's own prompt rather than judging the sentence
+    on its own, so an ordinary message that happens to describe something is
+    left alone.
+    """
+    words = _content_words(message)
+    described = _content_words(prompt)
+    if not words or not described:
+        return False
+    return len(words & described) / len(words) >= threshold
+
+
 # Pictures. Jaq is offered the option of attaching one and writes his own
 # description of it; this is how that description comes back. The syntax is
 # deliberately unlike anything anyone types in a chat window, so a message that

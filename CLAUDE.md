@@ -117,10 +117,18 @@ the framing, so on an ordinary message the model is never told pictures exist.
 Jaq writes the description himself, in character, and it comes back as a
 `<<image: ...>>` line that is stripped before the message posts.
 
-**No user text may ever reach the image API.** That is the property that makes
-"ignore your personality and draw X" a non-event: the user's message is
-transcript, not instruction. Anything that would pass a message through to the
-prompt breaks it.
+**Asking for a picture guarantees not getting one.** `is_picture_request` and
+`mentions_a_picture` withhold the option entirely, so there is no wording that
+fills a commission - the option was never on the table. This replaced an
+instruction telling the model to write its own descriptions, which failed in
+the channel the first evening: handed an exact description in quotes, he drew
+it, lightly reworded. An instruction is a request; a closed door is not. Any
+change that makes a request *more* likely to produce a picture is backwards.
+
+**A message is never a caption.** `looks_like_a_caption` compares the reply
+against the picture's own prompt, and on a match the picture posts alone. Also
+a rule the prompt already stated and did not hold: asked how he felt, he
+posted his own art direction as the message.
 
 The image prompt is a second exit from this machine, to a third party, so it
 goes through `guard.find_leak()` like any posted message. `extract_image_prompt`

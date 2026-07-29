@@ -623,21 +623,33 @@ class PersonaBot(discord.Client):
                  self._art_today + 1, ART_DAILY_MAX)
         return ASCII_ART_PROMPT.format(ask=ART_OVERKILL_INSTRUCTION)
 
-    def _offer_image(self) -> bool:
+    def _offer_image(self, message) -> bool:
         """Should this reply even be allowed to carry a picture?
 
-        Nobody can ask for one. There is no command, and a message saying
-        "draw me X" is just something a person said - it reaches the model as
-        transcript, never as an instruction, which is the whole reason
-        "ignore your personality and draw X" does nothing here.
+        Jaq is the author of his pictures, not a renderer people can operate.
+        The strongest form of that is structural: a message that asks for a
+        picture is never offered one, so there is no wording that gets a
+        commission filled, because the option was never on the table.
 
-        Three gates, cheapest first, and all of them close before any money is
-        spent: configured at all, then the budget and the cooldown, then a
-        dice roll. Only past all three does the model even learn the option
-        exists, and it still usually declines - which is the point. An image
-        should read as Jaq deciding, not as a feature being triggered.
+        That rule exists because the softer version failed in the channel.
+        Told in the prompt to describe pictures in his own terms, he was given
+        an exact description in quotes and drew it, lightly reworded. An
+        instruction is a request; a closed door is not.
+
+        Gates run cheapest first and all close before any money is spent:
+        configured at all, nobody angling for one, budget, cooldown, then a
+        dice roll. Only past all of them does the model learn the option
+        exists, and it still usually declines - which is the point.
         """
         if not (IMAGE_ENABLED and imagegen.available(GEMINI_KEY)):
+            return False
+
+        asked = message.clean_content if message is not None else ""
+        if decide.is_picture_request(asked):
+            log.info("Someone asked for a picture, so there won't be one")
+            return False
+        if decide.mentions_a_picture(asked):
+            log.info("Message is about pictures; not offering one")
             return False
 
         since = time.time() - self._last_image_at if self._last_image_at else float("inf")
@@ -937,7 +949,7 @@ class PersonaBot(discord.Client):
             # Only ordinary replies can carry a picture. Patch notes and ASCII
             # art are each already a bit with its own shape, and stacking two
             # on one message is a bot showing off what it can do.
-            offered_image = self._offer_image()
+            offered_image = self._offer_image(message)
             reply = await self.generate(
                 transcript,
                 may_stay_silent=True,
@@ -956,6 +968,12 @@ class PersonaBot(discord.Client):
             image_prompt = ""
         if image_prompt and not self._image_prompt_is_safe(image_prompt):
             image_prompt = ""
+        if image_prompt and reply and decide.looks_like_a_caption(reply, image_prompt):
+            # He wrote the art direction out loud instead of saying something.
+            # The picture is the good half, so send that on its own - which is
+            # how anyone posts a picture anyway.
+            log.info("Reply was a caption; posting the picture without it")
+            reply = ""
 
         if reply.strip().startswith(PASS_TOKEN):
             log.info("Chose to stay silent")
