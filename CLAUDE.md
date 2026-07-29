@@ -125,6 +125,12 @@ the framing, so on an ordinary message the model is never told pictures exist.
 Jaq writes the description himself, in character, and it comes back as a
 `<<image: ...>>` line that is stripped before the message posts.
 
+**There are two drawing surfaces and the newer one does not automatically
+win.** `_art_instruction` runs first and returns early, so an ally asking
+"draw me a dog" reached ASCII and never called `_offer_image` at all - Gemini
+was configured, funded, and simply never asked. A commission now outranks
+ASCII; a rolled offer does not, and asking for ASCII by name still gets ASCII.
+
 **Allies can ask for a picture; nobody else can.** Jack owns this thing, so
 an ally asking outright skips both the door and the dice - being told no eight
 times out of ten is the same as it not working. Every other gate still applies:

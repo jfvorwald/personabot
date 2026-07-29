@@ -281,6 +281,16 @@ def is_picture_request(text: str) -> bool:
     return False
 
 
+def wants_ascii(text: str) -> bool:
+    """Did they specifically ask for ASCII, rather than for a picture?
+
+    There are two drawing surfaces now - characters in a code fence, and a real
+    render. Asking for one by name has to still get that one, or the older
+    feature quietly disappears the day the newer one arrives.
+    """
+    return "ascii" in {w.strip("?!.,:;\"'") for w in text.lower().split()}
+
+
 def mentions_a_picture(text: str) -> bool:
     """Does this message talk about pictures at all?
 

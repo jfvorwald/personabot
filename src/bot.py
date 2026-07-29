@@ -687,7 +687,7 @@ class PersonaBot(discord.Client):
                  self._art_today + 1, ART_DAILY_MAX)
         return ASCII_ART_PROMPT.format(ask=ART_OVERKILL_INSTRUCTION)
 
-    def _offer_image(self, message) -> bool:
+    def _offer_image(self, message) -> str:
         """Should this reply even be allowed to carry a picture?
 
         Jaq is the author of his pictures, not a renderer people can operate.
@@ -710,21 +710,30 @@ class PersonaBot(discord.Client):
         exists, and it still usually declines - which is the point.
         """
         if not (IMAGE_ENABLED and imagegen.available(GEMINI_KEY)):
-            return False
+            return ""
 
         asked = message.clean_content if message is not None else ""
         ally = message is not None and self._is_ally(message)
         # An ally asking outright is the one case that bypasses both the door
         # and the dice. Everything below still applies: he can ask, he cannot
         # conjure budget that is spent.
-        commissioned = ally and decide.is_picture_request(asked)
+        #
+        # is_art_request as well as is_picture_request, because "draw me a dog"
+        # names no picture noun and is the obvious way to ask. Asking for ASCII
+        # by name still means ASCII - the older surface must not vanish the day
+        # the newer one arrives.
+        commissioned = (
+            ally
+            and not decide.wants_ascii(asked)
+            and (decide.is_picture_request(asked) or decide.is_art_request(asked))
+        )
         if not commissioned:
             if decide.is_picture_request(asked):
                 log.info("Someone asked for a picture, so there won't be one")
-                return False
+                return ""
             if decide.mentions_a_picture(asked):
                 log.info("Message is about pictures; not offering one")
-                return False
+                return ""
 
         since = time.time() - self._last_image_at if self._last_image_at else float("inf")
         blocked = decide.image_blocked(
@@ -741,16 +750,18 @@ class PersonaBot(discord.Client):
                 logging.INFO if commissioned else logging.DEBUG,
                 "No picture offered - %s", blocked,
             )
-            return False
+            return ""
         if not commissioned and random.random() > IMAGE_BASE_RATE:
-            return False
+            return ""
         log.info(
             "Offering a picture on this reply%s (%d/%s spent today)",
             " (asked for it)" if commissioned else "",
             self._images_today,
             IMAGE_DAILY_MAX or "∞",
         )
-        return True
+        # The caller needs to know which of these it is: a commission outranks
+        # the ASCII path, a rolled offer does not.
+        return "commissioned" if commissioned else "rolled"
 
     def _picture_refused(self, message, offered: bool) -> bool:
         """Did someone ask for a picture they are not getting?
@@ -1040,8 +1051,17 @@ class PersonaBot(discord.Client):
             # Fell through: not a usable poll, so carry on as a normal reply.
 
         art = self._art_instruction(message)
-        offered_image = False
-        if self._wants_patch_notes(message):
+        # Decided before the branches so the dice are rolled exactly once, and
+        # so a commission can outrank the ASCII path below.
+        patch_notes = self._wants_patch_notes(message)
+        image_mode = "" if patch_notes else self._offer_image(message)
+        offered_image = bool(image_mode)
+        if art and image_mode == "commissioned":
+            # Same request, two renderers. The one that makes an actual picture
+            # wins; asking for ASCII by name is handled inside _offer_image.
+            log.info("Asked for a drawing and can render one; skipping ASCII")
+            art = None
+        if patch_notes:
             reply = await self.generate(
                 transcript,
                 instruction=self._patch_notes_instruction(),
@@ -1057,7 +1077,6 @@ class PersonaBot(discord.Client):
             # Only ordinary replies can carry a picture. Patch notes and ASCII
             # art are each already a bit with its own shape, and stacking two
             # on one message is a bot showing off what it can do.
-            offered_image = self._offer_image(message)
             reply = await self.generate(
                 transcript,
                 may_stay_silent=True,

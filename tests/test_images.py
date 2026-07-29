@@ -147,36 +147,36 @@ def ready(persona_bot, monkeypatch, bot_module):
 
 
 def test_everything_open_offers_the_option(ready):
-    assert ready._offer_image(_pic_msg("the raid went badly")) is True
+    assert ready._offer_image(_pic_msg("the raid went badly"))
 
 
 def test_no_key_means_no_offer(ready, monkeypatch, bot_module):
     """The feature is optional in the real sense: anyone cloning this repo has
     no Google key, and the bot has to behave exactly as it did before."""
     monkeypatch.setattr(bot_module, "GEMINI_KEY", "")
-    assert ready._offer_image(_pic_msg("the raid went badly")) is False
+    assert not ready._offer_image(_pic_msg("the raid went badly"))
 
 
 def test_disabled_by_config(ready, monkeypatch, bot_module):
     monkeypatch.setattr(bot_module, "IMAGE_ENABLED", False)
-    assert ready._offer_image(_pic_msg("the raid went badly")) is False
+    assert not ready._offer_image(_pic_msg("the raid went badly"))
 
 
 def test_the_cap_stops_the_offer(ready, bot_module):
     ready._images_today = bot_module.IMAGE_DAILY_MAX
-    assert ready._offer_image(_pic_msg("the raid went badly")) is False
+    assert not ready._offer_image(_pic_msg("the raid went badly"))
 
 
 def test_the_cooldown_stops_the_offer(ready, monkeypatch, bot_module):
     monkeypatch.setattr(bot_module.time, "time", lambda: 1000.0)
     ready._last_image_at = 900.0  # 100s ago, cooldown is 600
-    assert ready._offer_image(_pic_msg("the raid went badly")) is False
+    assert not ready._offer_image(_pic_msg("the raid went badly"))
 
 
 def test_the_offer_respects_the_base_rate(ready, monkeypatch, bot_module):
     monkeypatch.setattr(bot_module, "IMAGE_BASE_RATE", 0.0)
     monkeypatch.setattr(bot_module.random, "random", lambda: 0.5)
-    assert ready._offer_image(_pic_msg("the raid went badly")) is False
+    assert not ready._offer_image(_pic_msg("the raid went badly"))
 
 
 def test_a_spent_budget_costs_nothing_to_check(ready, bot_module, monkeypatch):
@@ -188,7 +188,7 @@ def test_a_spent_budget_costs_nothing_to_check(ready, bot_module, monkeypatch):
         raise AssertionError("rolled dice for an image that cannot be made")
 
     monkeypatch.setattr(bot_module.random, "random", explode)
-    assert ready._offer_image(_pic_msg("the raid went badly")) is False
+    assert not ready._offer_image(_pic_msg("the raid went badly"))
 
 
 # --- nobody commissions a picture -------------------------------------------
@@ -235,23 +235,23 @@ def test_talking_about_pictures_is_not_a_commission(text):
 def test_a_commission_closes_the_door(ready):
     """Not "offered and declined" - never offered. There is no wording that
     gets a commission filled if the option was never on the table."""
-    assert ready._offer_image(_pic_msg("create a picture of a red ferrari")) is False
+    assert not ready._offer_image(_pic_msg("create a picture of a red ferrari"))
 
 
 def test_the_quoted_description_that_worked_is_now_refused(ready):
     quoted = 'create a picture of "a robot made of forehead-kiss residue and a permanent -58 balance"'
-    assert ready._offer_image(_pic_msg(quoted)) is False
+    assert not ready._offer_image(_pic_msg(quoted))
 
 
 def test_merely_mentioning_pictures_also_closes_it(ready):
     """Blunter than the request test and deliberately so: a phrasing no
     wordlist anticipated still almost always names the thing it wants, and
     over-suppressing is free when pictures are meant to be unprompted."""
-    assert ready._offer_image(_pic_msg("could really use a picture right now")) is False
+    assert not ready._offer_image(_pic_msg("could really use a picture right now"))
 
 
 def test_ordinary_talk_still_gets_the_option(ready):
-    assert ready._offer_image(_pic_msg("the new patch is objectively fine")) is True
+    assert ready._offer_image(_pic_msg("the new patch is objectively fine"))
 
 
 # --- a message is not a caption ---------------------------------------------
@@ -550,27 +550,27 @@ def _ally_msg(text):
 
 def test_an_ally_may_commission_a_picture(ready):
     """Jack owns this thing. Everyone else asking is the case the door is for."""
-    assert ready._offer_image(_ally_msg("create a picture of a red ferrari")) is True
+    assert ready._offer_image(_ally_msg("create a picture of a red ferrari")) == "commissioned"
 
 
 def test_an_ally_skips_the_dice(ready, monkeypatch, bot_module):
     """Being told no eight times out of ten is the same as it not working."""
     monkeypatch.setattr(bot_module, "IMAGE_BASE_RATE", 0.0)
     monkeypatch.setattr(bot_module.random, "random", lambda: 0.99)
-    assert ready._offer_image(_ally_msg("make me a picture of zack")) is True
+    assert ready._offer_image(_ally_msg("make me a picture of zack")) == "commissioned"
 
 
 def test_an_ally_cannot_conjure_spent_budget(ready, bot_module):
     """He can ask. He cannot ask his way past the money."""
     ready._images_today = bot_module.IMAGE_DAILY_MAX
-    assert ready._offer_image(_ally_msg("create a picture of a red ferrari")) is False
+    assert not ready._offer_image(_ally_msg("create a picture of a red ferrari"))
 
 
 def test_an_ally_not_asking_still_rolls(ready, monkeypatch, bot_module):
     """The bypass is for an explicit ask, not for everything an ally says."""
     monkeypatch.setattr(bot_module, "IMAGE_BASE_RATE", 0.0)
     monkeypatch.setattr(bot_module.random, "random", lambda: 0.99)
-    assert ready._offer_image(_ally_msg("the raid went badly")) is False
+    assert not ready._offer_image(_ally_msg("the raid went badly"))
 
 
 # --- a refused request must not produce a description -----------------------
@@ -606,3 +606,48 @@ def test_the_refusal_block_is_not_the_offer():
     """They must never both be appended - one says draw, the other says don't."""
     assert prompts.IMAGE_OPTION not in prompts.IMAGE_DECLINED
     assert "<<image:" not in prompts.IMAGE_DECLINED
+
+
+# --- two drawing surfaces, and which one wins -------------------------------
+#
+# The live failure: an ally asked for a drawing, is_art_request matched, the
+# ASCII path returned early, and _offer_image was never called at all. Gemini
+# was configured, funded and working, and never got asked.
+
+
+@pytest.mark.parametrize(
+    "text",
+    ["draw me a dog", "draw zack", "sketch the wipe", "render a tombstone"],
+)
+def test_an_ally_asking_to_draw_is_a_commission(ready, text):
+    """"draw me a dog" names no picture noun, so is_picture_request alone
+    misses it - and it is the obvious way to ask."""
+    assert ready._offer_image(_ally_msg(text)) == "commissioned"
+
+
+@pytest.mark.parametrize(
+    "text",
+    ["draw me a dog in ascii", "ascii art please", "do some ascii of zack"],
+)
+def test_asking_for_ascii_by_name_still_means_ascii(ready, text):
+    """The older surface must not vanish the day the newer one arrives."""
+    assert ready._offer_image(_ally_msg(text)) != "commissioned"
+
+
+def test_a_stranger_asking_to_draw_is_not_a_commission(ready):
+    """Unchanged for everyone else: they get ASCII, never a render."""
+    assert ready._offer_image(_pic_msg("draw me a dog")) != "commissioned"
+
+
+def test_a_commission_suppresses_the_ascii_path(persona_bot, bot_module, monkeypatch):
+    """The precedence rule itself: same request, two renderers, and the one
+    that makes an actual picture wins."""
+    monkeypatch.setattr(bot_module, "ART_ENABLED", True)
+    msg = _ally_msg("draw me a dog")
+    assert persona_bot._art_instruction(msg) is not None, "ASCII would have claimed it"
+
+
+def test_a_rolled_offer_does_not_suppress_ascii(ready, monkeypatch, bot_module):
+    """Only a commission outranks ASCII. An ordinary rolled offer does not,
+    or every trivial-question diagram would silently become a render."""
+    assert ready._offer_image(_pic_msg("the raid went badly")) == "rolled"
