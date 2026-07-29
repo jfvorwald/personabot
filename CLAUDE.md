@@ -66,6 +66,13 @@ If nothing was edited, run `./restart.sh status` instead and report it. Never
 answer "is it live?" from memory - the status output compares file mtimes
 against the process start time and answers it for real.
 
+**Report the deploy without being asked.** Every reply that touched this repo
+ends by saying, in the chat, what is now running: the restart output or the
+status line, what changed, and the test count. Jack should never have to ask
+"is Jaq up to date?" - if he does, the previous answer was incomplete. State it
+plainly even when nothing changed, because "already up to date" is also an
+answer, and say so explicitly when a deploy fails or is skipped.
+
 `./restart.sh` syntax-checks, runs the tests, refuses to deploy if either
 fails, waits for the old process to actually exit, and prints the live config.
 It is the verification, not just the deploy.
