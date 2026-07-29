@@ -69,6 +69,7 @@ from prompts import (
     POLL_LOST_PROMPT,
     POLL_PROMPT,
     FALLBACK_BRUSH_OFF,
+    DM_FRAMING,
     FRAMING,
     IMAGE_BRIEF_PROMPT,
     IMAGE_BRIEF_RETRY,
@@ -495,6 +496,13 @@ class PersonaBot(discord.Client):
                 LIVE_REPLY_TO_BOTS,
             )
             log.info(
+                "DMs: %s",
+                f"open to {', '.join(OBEY_IDS) if OBEY_IDS else ','.join(OBEY_HANDLES)}, "
+                f"answered every time, {DM_THINK_MIN:g}-{DM_THINK_MAX:g}s"
+                if DM_ENABLED
+                else "off",
+            )
+            log.info(
                 "Mentions: answered past the budget, up to %s. "
                 "Joining: after %d-%d messages, giving up past %d.",
                 "no limit" if LIVE_UNLIMITED or LIVE_HARD_CAP_MULTIPLIER <= 0
@@ -552,9 +560,12 @@ class PersonaBot(discord.Client):
             )
 
     async def on_message(self, message: discord.Message):
-        if not self.live or message.channel.id != CHANNEL_ID:
+        if not self.live or message.author.id == self.user.id:
             return
-        if message.author.id == self.user.id:
+        if isinstance(message.channel, discord.DMChannel):
+            await self._handle_dm(message)
+            return
+        if message.channel.id != CHANNEL_ID:
             return
 
         name = message.author.display_name.lower()
@@ -648,6 +659,82 @@ class PersonaBot(discord.Client):
                     self._replies_today,
                     self._daily_budget if self._daily_budget is not None else "∞",
                 )
+
+    def _allowed_in_dm(self, message) -> bool:
+        """Only the owner gets a private line. Id first, as everywhere else."""
+        author = message.author
+        if OBEY_IDS:
+            return str(author.id) in OBEY_IDS
+        return decide.name_matches(
+            {getattr(author, "name", ""), getattr(author, "display_name", "")},
+            OBEY_HANDLES,
+        )
+
+    async def _handle_dm(self, message) -> None:
+        """A one-to-one with the owner. Answered every time, straight away.
+
+        Almost nothing that makes the channel feel like a room applies here.
+        There is no roll, because there is nobody else who might answer. No
+        hanging back, because there is no conversation to join. No budget,
+        because the budget exists to stop two bots looping and this is a
+        person. No sign-off either - going quiet on the one person who can
+        actually reach you is the opposite of what all that machinery is for.
+        """
+        if not DM_ENABLED or not self._allowed_in_dm(message):
+            return
+        if not message.clean_content.strip():
+            return
+
+        today = message.created_at.astimezone(TIMEZONE).date()
+        if today != self._reply_day:
+            self._roll_day(today)
+
+        async with self._busy:
+            log.info("DM from %s", message.author.display_name)
+            try:
+                # Short, not absent. An instant reply still reads as a machine,
+                # but the long channel delays exist to avoid answering
+                # suspiciously fast in front of an audience, and here the
+                # audience is the person waiting.
+                await asyncio.sleep(random.uniform(DM_THINK_MIN, DM_THINK_MAX))
+                transcript, speakers = await self.read_transcript(message.channel)
+                image_mode = self._offer_image(
+                    message,
+                    await self._asks_for_a_picture(transcript, message.clean_content),
+                )
+                reply = await self.generate(
+                    transcript,
+                    speakers=speakers,
+                    direct=True,
+                    offer_image=bool(image_mode),
+                    commissioned=image_mode == "commissioned",
+                    ordered=self._ordered(message),
+                )
+                reply, image_prompt = decide.extract_image_prompt(reply)
+                if image_prompt and not self._image_prompt_is_safe(image_prompt):
+                    image_prompt = ""
+                if image_mode == "commissioned" and not image_prompt:
+                    image_prompt = await self._commission_brief(transcript, speakers)
+                if image_mode == "commissioned" and image_prompt:
+                    reply = ""
+
+                if reply:
+                    async with message.channel.typing():
+                        await asyncio.sleep(
+                            min(len(reply) / TYPING_CPS, TYPING_SECONDS_MAX)
+                        )
+                        await message.channel.send(reply[:MAX_DISCORD_CHARS])
+                    log.info("DM reply: %d chars", len(reply))
+                if image_prompt:
+                    self._send_image_later(
+                        message.channel,
+                        image_prompt,
+                        reason=image_prompt[:120],
+                        who=str(message.author.id),
+                    )
+                self._observe("dm", chars=len(reply), image=bool(image_prompt))
+            except Exception:
+                log.exception("DM reply failed")
 
     def _mentioned_me(self, message: discord.Message) -> bool:
         """A real Discord @mention - an unambiguous request for an answer."""
@@ -1686,11 +1773,13 @@ class PersonaBot(discord.Client):
         refuse_image: bool = False,
         commissioned: bool = False,
         ordered: bool = False,
+        direct: bool = False,
     ) -> str:
         # "You may decline to answer" and "carry this out now" cannot both be
         # in one prompt, so an order replaces the silence option rather than
         # sitting next to it.
-        framing = FRAMING + ("" if ordered else SILENCE_OPTION if may_stay_silent else "")
+        framing = FRAMING + (DM_FRAMING if direct else "")
+        framing += "" if (ordered or direct) else SILENCE_OPTION if may_stay_silent else ""
         framing += OBEY_PROMPT if ordered else ""
         if commissioned:
             framing += IMAGE_COMMISSIONED

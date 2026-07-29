@@ -140,8 +140,8 @@ status() {
     echo "running  pid $pid  since $(ps -o lstart= -p "$pid" | xargs)"
     # Only the current run: the log spans every deploy now.
     awk '/^===== started/{buf=""} {buf=buf $0 ORS} END{printf "%s", buf}' "$LOG" 2>/dev/null |
-        grep -E 'Logged in as|Live mode:|Mentions:|Allies:|Pictures:|New day|Resuming today|Poking|Idle openers:' |
-        tail -9 | sed 's/^.*personabot: /    /'
+        grep -E 'Logged in as|Live mode:|DMs:|Mentions:|Allies:|Pictures:|New day|Resuming today|Poking|Idle openers:' |
+        tail -10 | sed 's/^.*personabot: /    /'
     local extra
     extra=$(pgrep -cf "$PATTERN")
     [ "$extra" -gt 1 ] && echo "    WARNING: $extra instances running - run ./restart.sh"

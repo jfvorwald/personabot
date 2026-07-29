@@ -209,6 +209,20 @@ OBEY_HANDLES = [
     n.strip().lower() for n in os.getenv("OBEY_HANDLES", "jaqsup").split(",") if n.strip()
 ]
 
+# Direct messages. A DM is a one-to-one conversation with the person who owns
+# this thing, so almost none of the machinery that makes the channel feel like
+# a room applies: no dice roll, no hanging back, no budget, no waiting to see
+# if someone else answers first. It just answers.
+#
+# Same account list as OBEY, and for the same reason - this is a private line,
+# not a feature. Anyone else who DMs the bot gets nothing at all.
+DM_ENABLED = os.getenv("DM_ENABLED", "true").lower() == "true"
+# Thinking time in a DM. Far shorter than the channel: the delays there exist
+# so a reply does not land suspiciously fast in front of an audience, and in a
+# private conversation the audience is the person waiting for it.
+DM_THINK_MIN = float(os.getenv("DM_THINK_MIN", "1"))
+DM_THINK_MAX = float(os.getenv("DM_THINK_MAX", "4"))
+
 # Names the bot answers to, beyond a real @mention. Deliberately does NOT
 # include a bare "jaq": the persona is called Jaq and so is its creator, so a
 # bare "jaq" in this channel is ambiguous and usually means the human.
