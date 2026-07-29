@@ -143,6 +143,20 @@ IMAGE_CONTEXT = """
 
 {context}"""
 
+# Appended when someone asked for a picture and is not getting one. Without
+# this the model, told nothing, wrote a picture description as its message and
+# posted it with nothing attached - the worst of both outcomes, and how this
+# actually failed in the channel.
+IMAGE_DECLINED = """
+- Someone in there is angling for a picture. There isn't one, and there is \
+nothing you can do about that.
+- So do NOT describe a picture, do not write a caption, and do not sketch out \
+what one would look like. A description with no picture under it is worse than \
+saying nothing at all.
+- Answer them in words like you would answer anything else. Refusing is \
+allowed, being unimpressed that they asked is allowed, and neither needs \
+explaining."""
+
 
 PATCH_NOTES_PROMPT = """\
 Someone asked what has changed about you lately. Below is what was actually \

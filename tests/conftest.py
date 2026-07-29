@@ -86,6 +86,7 @@ def persona_bot(bot_module):
     b._images_today = 0
     b._last_image_at = 0.0
     b._replies_today = 0
+    b._replies_by_person = {}
     b._daily_budget = 100
     b._brushed_off_today = False
     b._messages_waited = 0

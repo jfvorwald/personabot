@@ -536,3 +536,73 @@ def test_the_cooldown_is_not_reset_by_a_new_day(persona_bot, bot_module, monkeyp
 
     persona_bot._roll_day(datetime.date(2026, 7, 29))
     assert persona_bot._last_image_at == 5555.0
+
+
+# --- Jack can ask; nobody else can ------------------------------------------
+
+
+def _ally_msg(text):
+    """conftest's environment puts "jaqsup" in ALLIES."""
+    m = FakeMessage(FakeAuthor("Real Jaq", "jaqsup"), text)
+    m.channel = None
+    return m
+
+
+def test_an_ally_may_commission_a_picture(ready):
+    """Jack owns this thing. Everyone else asking is the case the door is for."""
+    assert ready._offer_image(_ally_msg("create a picture of a red ferrari")) is True
+
+
+def test_an_ally_skips_the_dice(ready, monkeypatch, bot_module):
+    """Being told no eight times out of ten is the same as it not working."""
+    monkeypatch.setattr(bot_module, "IMAGE_BASE_RATE", 0.0)
+    monkeypatch.setattr(bot_module.random, "random", lambda: 0.99)
+    assert ready._offer_image(_ally_msg("make me a picture of zack")) is True
+
+
+def test_an_ally_cannot_conjure_spent_budget(ready, bot_module):
+    """He can ask. He cannot ask his way past the money."""
+    ready._images_today = bot_module.IMAGE_DAILY_MAX
+    assert ready._offer_image(_ally_msg("create a picture of a red ferrari")) is False
+
+
+def test_an_ally_not_asking_still_rolls(ready, monkeypatch, bot_module):
+    """The bypass is for an explicit ask, not for everything an ally says."""
+    monkeypatch.setattr(bot_module, "IMAGE_BASE_RATE", 0.0)
+    monkeypatch.setattr(bot_module.random, "random", lambda: 0.99)
+    assert ready._offer_image(_ally_msg("the raid went badly")) is False
+
+
+# --- a refused request must not produce a description -----------------------
+#
+# The live failure: told nothing, the model wrote "a two pound dog on a leash
+# made of tenor gifs, dragging a rank-1-in-2015 washed up hunter through a
+# snowstorm..." as its message, with no picture under it. Worse than either
+# outcome on its own.
+
+
+def test_a_refused_request_is_flagged(persona_bot):
+    msg = FakeMessage(FakeAuthor("wishxd", "giftxd"), "create a picture of a dog")
+    assert persona_bot._picture_refused(msg, offered=False) is True
+
+
+def test_an_answered_request_is_not_flagged(persona_bot):
+    msg = FakeMessage(FakeAuthor("wishxd", "giftxd"), "create a picture of a dog")
+    assert persona_bot._picture_refused(msg, offered=True) is False
+
+
+def test_ordinary_talk_is_not_flagged(persona_bot):
+    msg = FakeMessage(FakeAuthor("wishxd", "giftxd"), "the raid went badly")
+    assert persona_bot._picture_refused(msg, offered=False) is False
+
+
+def test_the_refusal_block_forbids_describing_one():
+    body = prompts.IMAGE_DECLINED
+    assert "do NOT describe a picture" in body
+    assert "no picture under it" in body
+
+
+def test_the_refusal_block_is_not_the_offer():
+    """They must never both be appended - one says draw, the other says don't."""
+    assert prompts.IMAGE_OPTION not in prompts.IMAGE_DECLINED
+    assert "<<image:" not in prompts.IMAGE_DECLINED

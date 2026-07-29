@@ -64,6 +64,15 @@ LIVE_UNLIMITED = LIVE_DAILY_MAX <= 0
 # replies is not being blanked; the day is simply over.
 LIVE_HARD_CAP_MULTIPLIER = float(os.getenv("LIVE_HARD_CAP_MULTIPLIER", "3"))
 
+# What any single person can spend in a day. The caps above are shared, so
+# without this one person in a long back-and-forth drains the day and everyone
+# else finds a bot that has nothing left for them - the loudest person in the
+# room deciding how much of it everyone else gets.
+#
+# Allies are exempt from this and from the hard cap. Jack owns the thing; he is
+# not queueing behind a quota to talk to it. 0 disables it.
+LIVE_PER_PERSON_MAX = int(os.getenv("LIVE_PER_PERSON_MAX", "12"))
+
 # Counterpart bots: matched case-insensitively against the Discord display
 # name. These bypass the ignore-other-bots rule so the two personas can talk at
 # all - but they are NOT guaranteed a reply. Letting one sit unanswered is

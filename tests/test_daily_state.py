@@ -180,3 +180,98 @@ def test_the_multiplier_is_configurable(persona_bot, bot_module, monkeypatch):
     assert _capped(
         persona_bot, 63, multiplier=2.0, bot_module=bot_module, monkeypatch=monkeypatch
     ) is False
+
+
+# --- Jack is not queueing behind his own quota ------------------------------
+
+
+def test_an_ally_crosses_the_hard_cap(persona_bot, bot_module, monkeypatch, jack):
+    """A ceiling meant to stop a room running up a bill should not be the
+    reason the person who built it gets ignored."""
+    from conftest import FakeMessage
+
+    monkeypatch.setattr(bot_module, "LIVE_HARD_CAP_MULTIPLIER", 3.0)
+    persona_bot._daily_budget = 32
+    persona_bot._replies_today = 500  # far past 3x
+    assert persona_bot._hard_capped(FakeMessage(jack, "still here")) is False
+
+
+def test_a_stranger_does_not_cross_it(persona_bot, bot_module, monkeypatch, stranger):
+    from conftest import FakeMessage
+
+    monkeypatch.setattr(bot_module, "LIVE_HARD_CAP_MULTIPLIER", 3.0)
+    persona_bot._daily_budget = 32
+    persona_bot._replies_today = 96
+    assert persona_bot._hard_capped(FakeMessage(stranger, "hi")) is True
+
+
+def test_no_message_still_answers_the_question(persona_bot, bot_module, monkeypatch):
+    """Callers that have no message - the idle opener, pokes - still need a
+    truthful answer about the ceiling."""
+    monkeypatch.setattr(bot_module, "LIVE_HARD_CAP_MULTIPLIER", 3.0)
+    persona_bot._daily_budget = 32
+    persona_bot._replies_today = 96
+    assert persona_bot._hard_capped() is True
+
+
+# --- everyone gets their own share ------------------------------------------
+
+
+def _from(author, text="hello"):
+    from conftest import FakeMessage
+
+    return FakeMessage(author, text)
+
+
+def test_a_person_under_their_quota_is_fine(persona_bot, bot_module, monkeypatch, stranger):
+    monkeypatch.setattr(bot_module, "LIVE_PER_PERSON_MAX", 12)
+    persona_bot._replies_by_person = {str(stranger.id): 11}
+    assert persona_bot._person_capped(_from(stranger)) is False
+
+
+def test_a_person_at_their_quota_is_capped(persona_bot, bot_module, monkeypatch, stranger):
+    monkeypatch.setattr(bot_module, "LIVE_PER_PERSON_MAX", 12)
+    persona_bot._replies_by_person = {str(stranger.id): 12}
+    assert persona_bot._person_capped(_from(stranger)) is True
+
+
+def test_one_person_running_out_does_not_affect_anyone_else(
+    persona_bot, bot_module, monkeypatch, stranger, zack
+):
+    """The whole point: running out is something you do to yourself rather
+    than to the room."""
+    monkeypatch.setattr(bot_module, "LIVE_PER_PERSON_MAX", 12)
+    persona_bot._replies_by_person = {str(stranger.id): 40}
+    assert persona_bot._person_capped(_from(stranger)) is True
+    assert persona_bot._person_capped(_from(zack)) is False
+
+
+def test_allies_have_no_per_person_quota(persona_bot, bot_module, monkeypatch, jack):
+    monkeypatch.setattr(bot_module, "LIVE_PER_PERSON_MAX", 12)
+    persona_bot._replies_by_person = {str(jack.id): 500}
+    assert persona_bot._person_capped(_from(jack)) is False
+
+
+def test_a_zero_quota_disables_it(persona_bot, bot_module, monkeypatch, stranger):
+    monkeypatch.setattr(bot_module, "LIVE_PER_PERSON_MAX", 0)
+    persona_bot._replies_by_person = {str(stranger.id): 500}
+    assert persona_bot._person_capped(_from(stranger)) is False
+
+
+def test_per_person_spend_survives_a_restart(stateful_bot):
+    stateful_bot._replies_by_person = {"123": 7, "456": 2}
+    stateful_bot._save_day()
+    stateful_bot._replies_by_person = {}
+    assert stateful_bot._restore_day(stateful_bot._reply_day) is True
+    assert stateful_bot._replies_by_person == {"123": 7, "456": 2}
+
+
+def test_a_new_day_clears_per_person_spend(persona_bot, bot_module, monkeypatch):
+    import datetime
+
+    monkeypatch.setattr(bot_module, "LIVE_UNLIMITED", True)
+    persona_bot._save_day = lambda: None
+    persona_bot._schedule_pokes = lambda today: None
+    persona_bot._replies_by_person = {"123": 40}
+    persona_bot._roll_day(datetime.date(2026, 7, 29))
+    assert persona_bot._replies_by_person == {}

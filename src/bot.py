@@ -69,6 +69,7 @@ from prompts import (
     FALLBACK_BRUSH_OFF,
     FRAMING,
     IMAGE_CONTEXT,
+    IMAGE_DECLINED,
     IMAGE_OPTION,
     MAX_DISCORD_CHARS,
     OPENER_PROMPT,
@@ -105,6 +106,9 @@ class PersonaBot(discord.Client):
         self._poke_times: list = []
 
         self._replies_today = 0
+        # Per-person spend for today, keyed by Discord user id as a string
+        # because that is what survives a round trip through JSON.
+        self._replies_by_person: dict[str, int] = {}
         self._reply_day = None
         self._daily_budget = 0
         self._brushed_off_today = False
@@ -240,6 +244,7 @@ class PersonaBot(discord.Client):
                     {
                         "day": str(self._reply_day),
                         "replies": self._replies_today,
+                        "by_person": self._replies_by_person,
                         "reactions": self._reactions_today,
                         "art": self._art_today,
                         "polls": self._polls_today,
@@ -266,6 +271,7 @@ class PersonaBot(discord.Client):
 
         self._reply_day = today
         self._replies_today = state.get("replies", 0)
+        self._replies_by_person = state.get("by_person", {}) or {}
         self._reactions_today = state.get("reactions", 0)
         self._art_today = state.get("art", 0)
         self._polls_today = state.get("polls", 0)
@@ -289,6 +295,7 @@ class PersonaBot(discord.Client):
         """Start a new day with a fresh, randomly drawn reply budget."""
         self._reply_day = today
         self._replies_today = 0
+        self._replies_by_person = {}
         self._reactions_today = 0
         self._art_today = 0
         # Was omitted here, so the poll budget only ever refilled on a restart:
@@ -352,20 +359,36 @@ class PersonaBot(discord.Client):
             self._replies_today >= self._daily_budget
         )
 
-    def _hard_capped(self) -> bool:
-        """Past the ceiling that even a mention or an ally does not cross.
+    def _hard_capped(self, message=None) -> bool:
+        """Past the ceiling that a mention does not cross.
 
         The daily budget is soft on purpose - being @mentioned by name and
         being spoken to by a friend both bypass it, which is what stops the
         rationing from ever reading as blanking someone. The cost is that a
         busy day has no upper bound at all, and one ran 60% over.
 
-        This is the bound. Exempt traffic still ignores the budget, it just
-        cannot ignore this.
+        Allies are the exception, and the only one. Jack owns this thing, and
+        a ceiling meant to stop a room full of people running up a bill should
+        not be the reason the person who built it gets ignored.
         """
+        if message is not None and self._is_ally(message):
+            return False
         if self._daily_budget is None or LIVE_HARD_CAP_MULTIPLIER <= 0:
             return False
         return self._replies_today >= self._daily_budget * LIVE_HARD_CAP_MULTIPLIER
+
+    def _person_capped(self, message) -> bool:
+        """Has this one person already had their share of the day?
+
+        Every other cap is shared, so one person in a long back-and-forth can
+        drain the day and leave everyone else with a bot that has nothing left
+        for them. This one is per-person, so running out is something you do
+        to yourself rather than to the room.
+        """
+        if LIVE_PER_PERSON_MAX <= 0 or self._is_ally(message):
+            return False
+        spent = self._replies_by_person.get(str(message.author.id), 0)
+        return spent >= LIVE_PER_PERSON_MAX
 
     async def on_ready(self):
         log.info("Logged in as %s (id=%s)", self.user, self.user.id)
@@ -476,9 +499,18 @@ class PersonaBot(discord.Client):
             # looping forever; neither of those is that.
             human_mention = mentioned and not message.author.bot
             exempt = human_mention or self._is_ally(message)
-            # The hard cap is checked first because nothing is exempt from it.
-            if self._hard_capped() or (self._out_of_budget() and not exempt):
-                capped = self._hard_capped()
+            # One person having spent their own share is not the room running
+            # out, so it is silent - there is no sign-off owed to someone who
+            # has already had a dozen replies today.
+            if self._person_capped(message):
+                log.info(
+                    "%s has had their %d for today; ignoring",
+                    message.author.display_name,
+                    LIVE_PER_PERSON_MAX,
+                )
+                return
+            if self._hard_capped(message) or (self._out_of_budget() and not exempt):
+                capped = self._hard_capped(message)
                 if self._brushed_off_today:
                     log.info(
                         "%s for today (%d replies); ignoring",
@@ -510,6 +542,8 @@ class PersonaBot(discord.Client):
             # Staying silent is free - only real messages spend the budget.
             if posted:
                 self._replies_today += 1
+                who = str(message.author.id)
+                self._replies_by_person[who] = self._replies_by_person.get(who, 0) + 1
                 # We're in the conversation now; the next one starts a fresh
                 # hang-back.
                 self._reset_hang_back()
@@ -666,21 +700,31 @@ class PersonaBot(discord.Client):
         an exact description in quotes and drew it, lightly reworded. An
         instruction is a request; a closed door is not.
 
+        Jack is the exception and the only one. He owns this thing, so when he
+        asks he gets one, and he skips the dice as well as the door - being
+        told no eight times out of ten is the same as it not working.
+
         Gates run cheapest first and all close before any money is spent:
-        configured at all, nobody angling for one, budget, cooldown, then a
-        dice roll. Only past all of them does the model learn the option
+        configured at all, nobody else angling for one, budget, cooldown, then
+        a dice roll. Only past all of them does the model learn the option
         exists, and it still usually declines - which is the point.
         """
         if not (IMAGE_ENABLED and imagegen.available(GEMINI_KEY)):
             return False
 
         asked = message.clean_content if message is not None else ""
-        if decide.is_picture_request(asked):
-            log.info("Someone asked for a picture, so there won't be one")
-            return False
-        if decide.mentions_a_picture(asked):
-            log.info("Message is about pictures; not offering one")
-            return False
+        ally = message is not None and self._is_ally(message)
+        # An ally asking outright is the one case that bypasses both the door
+        # and the dice. Everything below still applies: he can ask, he cannot
+        # conjure budget that is spent.
+        commissioned = ally and decide.is_picture_request(asked)
+        if not commissioned:
+            if decide.is_picture_request(asked):
+                log.info("Someone asked for a picture, so there won't be one")
+                return False
+            if decide.mentions_a_picture(asked):
+                log.info("Message is about pictures; not offering one")
+                return False
 
         since = time.time() - self._last_image_at if self._last_image_at else float("inf")
         blocked = decide.image_blocked(
@@ -690,18 +734,34 @@ class PersonaBot(discord.Client):
             cooldown=IMAGE_COOLDOWN_SECONDS,
         )
         if blocked:
-            # Logged at debug: at a ten minute cooldown this is the common case
-            # and would otherwise be most of the log.
-            log.debug("No picture offered - %s", blocked)
+            # Logged at debug when nobody asked: at a ten minute cooldown that
+            # is the common case and would otherwise be most of the log. When
+            # someone did ask, the silence needs explaining.
+            log.log(
+                logging.INFO if commissioned else logging.DEBUG,
+                "No picture offered - %s", blocked,
+            )
             return False
-        if random.random() > IMAGE_BASE_RATE:
+        if not commissioned and random.random() > IMAGE_BASE_RATE:
             return False
         log.info(
-            "Offering a picture on this reply (%d/%s spent today)",
+            "Offering a picture on this reply%s (%d/%s spent today)",
+            " (asked for it)" if commissioned else "",
             self._images_today,
             IMAGE_DAILY_MAX or "∞",
         )
         return True
+
+    def _picture_refused(self, message, offered: bool) -> bool:
+        """Did someone ask for a picture they are not getting?
+
+        The model needs telling. Left to work it out, it wrote a description of
+        a picture as its message and posted it with nothing underneath, which
+        is worse than either outcome on its own and is how this failed live.
+        """
+        if offered or message is None:
+            return False
+        return decide.is_picture_request(message.clean_content)
 
     def _image_context(self, transcript: str) -> str:
         """A world to set the picture in, if the room is talking about one.
@@ -1003,6 +1063,7 @@ class PersonaBot(discord.Client):
                 may_stay_silent=True,
                 speakers=speakers,
                 offer_image=offered_image,
+                refuse_image=self._picture_refused(message, offered_image),
             )
         if not reply:
             return False
@@ -1250,10 +1311,13 @@ class PersonaBot(discord.Client):
         instruction: str | None = None,
         speakers: set[int] | None = None,
         offer_image: bool = False,
+        refuse_image: bool = False,
     ) -> str:
         framing = FRAMING + (SILENCE_OPTION if may_stay_silent else "")
         if offer_image:
             framing += IMAGE_OPTION + self._image_context(transcript)
+        elif refuse_image:
+            framing += IMAGE_DECLINED
         system = self.persona
         if self.psychology:
             system = f"{system}\n\n---\n\n{self.psychology}"

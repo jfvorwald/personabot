@@ -368,7 +368,10 @@ person; live mode at 4-10 messages/day is a small multiple of that. Knobs in
 - `LIVE_DAILY_MAX` - the ceiling on live mode. This is the one that matters.
 - `LIVE_HARD_CAP_MULTIPLIER` - the ceiling on the *overage*. The daily budget
   is soft, because @mentions from humans and anything an ally says are answered
-  past it, so a busy day runs well over. Nothing crosses this one.
+  past it, so a busy day runs well over. Only allies cross this one.
+- `LIVE_PER_PERSON_MAX` - what any one person can spend. Every other cap is
+  shared, so without this the loudest person in the room decides how much of
+  the bot everyone else gets.
 
 ## Tuning the conversation
 

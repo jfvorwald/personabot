@@ -113,10 +113,11 @@ examples, which the model copies verbatim rather than treating as style. That
 failure has now happened three times in this project; prefer rules over
 examples in any prompt here.
 
-## Pictures are never commanded, only chosen
+## Pictures are chosen, not commanded - except by Jack
 
-There is no "make an image of X" surface and adding one is a separate feature
-with its own rate limit, not a small extension of this one. Nobody can ask.
+There is no public "make an image of X" surface, and adding one is a separate
+feature with its own rate limit rather than a small extension of this one. The
+only person who can ask is an ally.
 
 The reply path gates client-side first - configured, in budget, off cooldown,
 then a dice roll on `IMAGE_BASE_RATE` - and only then appends `IMAGE_OPTION` to
@@ -124,7 +125,18 @@ the framing, so on an ordinary message the model is never told pictures exist.
 Jaq writes the description himself, in character, and it comes back as a
 `<<image: ...>>` line that is stripped before the message posts.
 
-**Asking for a picture guarantees not getting one.** `is_picture_request` and
+**Allies can ask for a picture; nobody else can.** Jack owns this thing, so
+an ally asking outright skips both the door and the dice - being told no eight
+times out of ten is the same as it not working. Every other gate still applies:
+he can ask, he cannot ask his way past a spent budget.
+
+**When a request is refused, the model is told so.** `IMAGE_DECLINED` exists
+because saying nothing produced the worst outcome available: refused a picture
+and left to work it out, it wrote a description of one as its message and
+posted it with nothing underneath. Withholding a capability while the room is
+asking for it is not enough on its own.
+
+**Asking for a picture guarantees not getting one, unless you are an ally.** `is_picture_request` and
 `mentions_a_picture` withhold the option entirely, so there is no wording that
 fills a commission - the option was never on the table. This replaced an
 instruction telling the model to write its own descriptions, which failed in
