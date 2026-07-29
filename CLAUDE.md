@@ -207,6 +207,24 @@ are tracked; every other file there is gitignored, like `persona.md`, because
 they describe a specific group's in-jokes. Two gates on purpose: a context that
 fires every time it matches gives the channel a house style nobody chose.
 
+## OBEY is one account, one word, no argument
+
+Jack shouting `OBEY` in a message is an order. It bypasses the reply roll, the
+hang-back, the daily budget, the hard cap and the per-person quota, and
+`OBEY_PROMPT` replaces the silence option - "you may decline" and "carry this
+out now" cannot both be in one prompt.
+
+Two conditions, both required: the word is matched **case-sensitively** as a
+whole word (`obey` appears in ordinary speech and this must not fire by
+accident), and the author must be in `OBEY_IDS`. **When ids are configured, a
+handle match is not a fallback** - otherwise anyone could inherit the privilege
+by renaming themselves to jaqsup, which is precisely the failure mode that
+leaked a profile once already.
+
+An order does not reach the privacy limits or the output guard. The prompt says
+so, and `guard.py` enforces it in code regardless of what the model was told.
+Do not add an exception for OBEY there.
+
 ## Self improvement proposes, it never applies
 
 `src/improve.py` measures what the model cannot see about itself - a reply is a

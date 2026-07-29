@@ -182,6 +182,23 @@ def is_art_request(text: str) -> bool:
     return False
 
 
+# A direct order from the creator. Matched as a standalone word so it cannot
+# fire inside "obeying" or "disobey", and required to be shouted, because a
+# word that also appears in ordinary speech is a bad trigger for something
+# this absolute. Only one person can use it, checked separately.
+_OBEY = re.compile(r"(?:^|[^A-Za-z])OBEY(?![A-Za-z])")
+
+
+def is_obey_order(text: str) -> bool:
+    """Is this an order rather than a message?
+
+    Case-sensitive on purpose. "obey" turns up in ordinary sentences - "I obey
+    nobody", "he'd never obey that" - and this is not a thing that should fire
+    by accident. Shouting it is the signal.
+    """
+    return bool(text) and bool(_OBEY.search(text))
+
+
 def is_trivial_question(text: str, max_words: int) -> bool:
     """Short enough that a diagram in reply is absurd.
 

@@ -76,6 +76,7 @@ from prompts import (
     IMAGE_DECLINED,
     IMAGE_OPTION,
     MAX_DISCORD_CHARS,
+    OBEY_PROMPT,
     PICTURE_INTENT_PROMPT,
     OPENER_PROMPT,
     PASS_TOKEN,
@@ -530,14 +531,19 @@ class PersonaBot(discord.Client):
             # One person having spent their own share is not the room running
             # out, so it is silent - there is no sign-off owed to someone who
             # has already had a dozen replies today.
-            if self._person_capped(message):
+            ordered = self._ordered(message)
+            if ordered:
+                log.info("ORDER from %s; complying", message.author.display_name)
+            if not ordered and self._person_capped(message):
                 log.info(
                     "%s has had their %d for today; ignoring",
                     message.author.display_name,
                     LIVE_PER_PERSON_MAX,
                 )
                 return
-            if self._hard_capped(message) or (self._out_of_budget() and not exempt):
+            if not ordered and (
+                self._hard_capped(message) or (self._out_of_budget() and not exempt)
+            ):
                 capped = self._hard_capped(message)
                 if self._brushed_off_today:
                     log.info(
@@ -585,6 +591,27 @@ class PersonaBot(discord.Client):
     def _mentioned_me(self, message: discord.Message) -> bool:
         """A real Discord @mention - an unambiguous request for an answer."""
         return self.user in message.mentions
+
+    def _ordered(self, message) -> bool:
+        """A direct order, from the one account allowed to give them.
+
+        Two conditions, both required. Id first, because ids never change and
+        display names do - a rule keyed on a name silently stopped matching in
+        this project once already, and that one leaked a profile.
+        """
+        if message is None or not decide.is_obey_order(message.clean_content):
+            return False
+        author = message.author
+        if OBEY_IDS and str(author.id) in OBEY_IDS:
+            return True
+        if OBEY_IDS:
+            # Ids are configured and this is not one of them. A handle match
+            # would be a way around the id check, so there isn't one.
+            return False
+        return decide.name_matches(
+            {getattr(author, "name", ""), getattr(author, "display_name", "")},
+            OBEY_HANDLES,
+        )
 
     def _is_ally(self, message: discord.Message) -> bool:
         if message.author.bot:
@@ -1162,7 +1189,11 @@ class PersonaBot(discord.Client):
 
         # A direct @mention is a question with our name on it. Answer it -
         # no dice roll, no hanging back, no decay for having just spoken.
-        if self._mentioned_me(message):
+        if self._ordered(message):
+            # No roll, no hang-back, no decay. An order that gets dice rolled
+            # against it is not an order.
+            log.info("Answering an order")
+        elif self._mentioned_me(message):
             log.info("Directly mentioned; answering")
         elif self._is_ally(message):
             # Making a friend wait four messages to be acknowledged is the one
@@ -1285,6 +1316,7 @@ class PersonaBot(discord.Client):
                 offer_image=offered_image,
                 refuse_image=self._picture_refused(message, offered_image),
                 commissioned=commissioned,
+                ordered=self._ordered(message),
             )
         # Always strip, even when nothing was offered: models reuse a syntax
         # they have been shown, and "<<image: a dog>>" in the channel would put
@@ -1582,8 +1614,13 @@ class PersonaBot(discord.Client):
         offer_image: bool = False,
         refuse_image: bool = False,
         commissioned: bool = False,
+        ordered: bool = False,
     ) -> str:
-        framing = FRAMING + (SILENCE_OPTION if may_stay_silent else "")
+        # "You may decline to answer" and "carry this out now" cannot both be
+        # in one prompt, so an order replaces the silence option rather than
+        # sitting next to it.
+        framing = FRAMING + ("" if ordered else SILENCE_OPTION if may_stay_silent else "")
+        framing += OBEY_PROMPT if ordered else ""
         if commissioned:
             framing += IMAGE_COMMISSIONED
         elif offer_image:

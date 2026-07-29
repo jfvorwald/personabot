@@ -182,6 +182,18 @@ IMPROVE_LOG = os.getenv("IMPROVE_LOG", "improvements/observations.jsonl")
 # the counters, so a day with ten deploys has no effective cap at all.
 STATE_FILE = os.getenv("STATE_FILE", ".bot_state.json")
 
+# OBEY. One person can give Jaq a direct order, and he carries it out without
+# argument. Keyed on Discord user id first: ids never change, display names do,
+# and this project has already had a rule keyed on a name silently stop
+# matching when someone renamed themselves.
+#
+# Deliberately narrower than ALLIES. Allies are people Jaq is on the side of;
+# this is the one account that can give him orders.
+OBEY_IDS = {i.strip() for i in os.getenv("OBEY_IDS", "").split(",") if i.strip()}
+OBEY_HANDLES = [
+    n.strip().lower() for n in os.getenv("OBEY_HANDLES", "jaqsup").split(",") if n.strip()
+]
+
 # Names the bot answers to, beyond a real @mention. Deliberately does NOT
 # include a bare "jaq": the persona is called Jaq and so is its creator, so a
 # bare "jaq" in this channel is ambiguous and usually means the human.
