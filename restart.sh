@@ -87,12 +87,22 @@ stop() {
         return 0
     fi
     kill "$pid" 2>/dev/null
-    # Wait for it to actually exit. Starting a second instance while the first
-    # is alive means every message gets answered twice.
-    for _ in $(seq 40); do
+    # SIGTERM asks it to finish what is in flight rather than dropping it. A
+    # deploy landing mid-reply used to kill the reply outright, which from the
+    # channel is indistinguishable from the bot being broken - it happened to
+    # a picture three seconds after the bot decided to make one.
+    #
+    # Wait longer than a reply takes (think + typing + a render), then insist.
+    local waited=0
+    for _ in $(seq 260); do
         kill -0 "$pid" 2>/dev/null || break
+        if [ "$waited" = "8" ]; then
+            echo "    waiting for work in flight to finish..."
+        fi
+        waited=$((waited + 1))
         sleep 0.25
     done
+    kill -0 "$pid" 2>/dev/null && echo "    still busy after 65s - forcing"
     kill -9 "$pid" 2>/dev/null
     rm -f "$PIDFILE"
     echo "stopped (was pid $pid)"

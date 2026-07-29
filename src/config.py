@@ -187,6 +187,11 @@ POLL_HOURS = int(os.getenv("POLL_HOURS", "4"))
 IMPROVE_ENABLED = os.getenv("IMPROVE_ENABLED", "true").lower() == "true"
 IMPROVE_LOG = os.getenv("IMPROVE_LOG", "improvements/observations.jsonl")
 
+# How long a deploy waits for work in flight before killing it. Restarting on
+# every change is the workflow, so this collides constantly: a reply takes up
+# to ~45s of thinking and typing, and a picture another ~10s after that.
+SHUTDOWN_GRACE = float(os.getenv("SHUTDOWN_GRACE", "60"))
+
 # Where the day's spend is kept so it survives a restart. Without this the
 # budget only ever bounds a single process: deploying re-draws it and zeroes
 # the counters, so a day with ten deploys has no effective cap at all.

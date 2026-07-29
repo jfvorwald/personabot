@@ -25,6 +25,7 @@ import io
 import logging
 import os
 import random
+import signal
 import sys
 import json
 import time
@@ -423,6 +424,53 @@ class PersonaBot(discord.Client):
             return False
         spent = self._replies_by_person.get(str(message.author.id), 0)
         return spent >= LIVE_PER_PERSON_MAX
+
+    async def setup_hook(self):
+        """Catch SIGTERM so a deploy does not kill a reply in progress.
+
+        Restarting on every change is the workflow here, so this collides with
+        the bot constantly: it was three seconds into generating a picture Jack
+        had asked for when a deploy killed it, and from the channel that looked
+        exactly like the feature being broken again.
+
+        discord.py installs no handler of its own, so SIGTERM terminates the
+        process wherever it happens to be.
+        """
+        loop = asyncio.get_running_loop()
+        for name in ("SIGTERM", "SIGINT"):
+            try:
+                loop.add_signal_handler(
+                    getattr(signal, name), lambda: asyncio.create_task(self._wind_down())
+                )
+            except (NotImplementedError, AttributeError, ValueError):
+                # Windows, or a loop that will not take handlers. The old
+                # behaviour - dying immediately - is the fallback.
+                pass
+
+    async def _wind_down(self) -> None:
+        """Finish what is in flight, then close. Bounded, so a stuck reply
+        cannot hold a deploy open forever."""
+        if getattr(self, "_closing", False):
+            return
+        self._closing = True
+        if self._busy.locked():
+            log.info("Shutdown: waiting for the reply in progress")
+            try:
+                await asyncio.wait_for(self._busy.acquire(), timeout=SHUTDOWN_GRACE)
+                self._busy.release()
+                log.info("Shutdown: in-flight reply finished")
+            except asyncio.TimeoutError:
+                log.warning(
+                    "Shutdown: reply still running after %gs; closing anyway",
+                    SHUTDOWN_GRACE,
+                )
+        # Pictures render outside the lock, so wait on them separately.
+        pending = [t for t in self._pending if not t.done()]
+        if pending:
+            log.info("Shutdown: waiting for %d background task(s)", len(pending))
+            await asyncio.wait(pending, timeout=SHUTDOWN_GRACE)
+        log.info("Shutdown: closing")
+        await self.close()
 
     async def on_ready(self):
         log.info(

@@ -343,3 +343,68 @@ def test_a_new_day_refills_openers(persona_bot, bot_module, monkeypatch):
     persona_bot._roll_day(datetime.date(2026, 7, 29))
     assert persona_bot._openers_today == 0
     assert persona_bot._unanswered_openers == 0
+
+
+# --- a deploy must not kill work in flight ----------------------------------
+
+
+def test_shutdown_waits_for_a_reply_in_progress(persona_bot, bot_module, monkeypatch):
+    """A deploy landed three seconds after the bot decided to make a picture
+    and killed it. From the channel that is indistinguishable from the feature
+    being broken."""
+    import asyncio
+
+    monkeypatch.setattr(bot_module, "SHUTDOWN_GRACE", 2.0)
+    persona_bot._busy = asyncio.Lock()
+    persona_bot._pending = set()
+    closed = []
+    persona_bot.close = lambda: asyncio.sleep(0, result=closed.append(True))
+
+    async def scenario():
+        await persona_bot._busy.acquire()          # a reply is in progress
+
+        async def finish():
+            await asyncio.sleep(0.2)
+            persona_bot._busy.release()
+
+        asyncio.get_running_loop().create_task(finish())
+        await persona_bot._wind_down()
+
+    asyncio.run(scenario())
+    assert closed == [True], "it should close, but only after the reply finished"
+
+
+def test_shutdown_gives_up_on_a_stuck_reply(persona_bot, bot_module, monkeypatch):
+    """A stuck reply must not hold a deploy open forever."""
+    import asyncio
+
+    monkeypatch.setattr(bot_module, "SHUTDOWN_GRACE", 0.1)
+    persona_bot._busy = asyncio.Lock()
+    persona_bot._pending = set()
+    closed = []
+    persona_bot.close = lambda: asyncio.sleep(0, result=closed.append(True))
+
+    async def scenario():
+        await persona_bot._busy.acquire()  # never released
+        await persona_bot._wind_down()
+
+    asyncio.run(scenario())
+    assert closed == [True]
+
+
+def test_shutdown_is_idempotent(persona_bot, bot_module, monkeypatch):
+    """SIGTERM then SIGINT, or an impatient deploy, must not close twice."""
+    import asyncio
+
+    monkeypatch.setattr(bot_module, "SHUTDOWN_GRACE", 0.1)
+    persona_bot._busy = asyncio.Lock()
+    persona_bot._pending = set()
+    closed = []
+    persona_bot.close = lambda: asyncio.sleep(0, result=closed.append(True))
+
+    async def scenario():
+        await persona_bot._wind_down()
+        await persona_bot._wind_down()
+
+    asyncio.run(scenario())
+    assert closed == [True]
