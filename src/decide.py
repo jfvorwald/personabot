@@ -444,6 +444,26 @@ def strip_attachment_notes(text: str) -> str:
     return re.sub(r"\n{2,}", "\n\n", out).strip()
 
 
+# Discord's reply feature, requested by the model rather than decided in code:
+# whether a line is a burn that needs its target attached is a judgement, and a
+# dice roll would fire it on ordinary remarks while suppressing the real ones.
+_REPLY_FLAG = re.compile(r"<<\s*reply\s*>>", re.IGNORECASE)
+
+
+def wants_reply_to(text: str) -> tuple[str, bool]:
+    """Split a message into what posts and whether to attach it to its target.
+
+    Stripped whether or not the flag was offered, on the same principle as the
+    image directive: a model that has seen a syntax will eventually reproduce
+    it, and "<<reply>>" appearing in the channel exposes the machinery.
+    """
+    if not text or "<<" not in text:
+        return text, False
+    found = bool(_REPLY_FLAG.search(text))
+    cleaned = _REPLY_FLAG.sub("", text)
+    return "\n".join(line.rstrip() for line in cleaned.splitlines()).strip(), found
+
+
 def image_blocked(
     *,
     spent: int,

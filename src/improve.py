@@ -126,12 +126,18 @@ def engagement(records: list[dict]) -> dict:
     """
     kinds: Counter = Counter(r.get("kind", "?") for r in records)
     paths: Counter = Counter(r.get("path", "?") for r in records if r.get("kind") == "reply")
+    replies = [r for r in records if r.get("kind") == "reply"]
+    quoted = sum(1 for r in replies if r.get("as_reply"))
     return {
         "total": len(records),
         "kinds": dict(kinds),
         "paths": dict(paths),
         "passed": kinds.get("pass", 0),
         "replied": kinds.get("reply", 0),
+        # Discord's reply feature is meant to be rare. "Rare" is an opinion
+        # until it is a number, so it gets counted.
+        "quote_replied": quoted,
+        "quote_reply_share": round(quoted / len(replies), 2) if replies else 0.0,
     }
 
 

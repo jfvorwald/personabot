@@ -137,6 +137,9 @@ def measure(messages: list, me: int, records: list[dict]) -> str:
             f"From his own log: {stats['replied']} replies, {stats['passed']} "
             f"deliberate silences.",
             f"  paths taken: {stats['paths']}",
+            f"  used Discord's reply feature on {stats['quote_replied']} of them "
+            f"({stats['quote_reply_share']:.0%}) - it is meant to be rare, for a "
+            f"line that only lands with its target attached",
             "",
         ]
     return "\n".join(lines)

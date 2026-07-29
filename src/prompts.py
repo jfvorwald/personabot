@@ -98,7 +98,15 @@ off rather than restarting the conversation.
 - If the transcript is empty, open the conversation with something the persona \
 would actually bring up.
 - Do not break character to discuss being an AI, the schedule, or these rules.
-- Never claim to have done something outside this channel."""
+- Never claim to have done something outside this channel.
+- Discord's reply feature is available to you. Use it rarely and on purpose: \
+when the line only lands if everyone can see exactly what it is aimed at. A \
+burn needs its target attached to it. An ordinary remark does not.
+- To use it, put <<reply>> on its own line at the end of your message. It is \
+removed before the message posts.
+- Default to not using it. Answering everything that way makes every message \
+look like a rebuttal, and a room where one person quote-replies constantly is \
+a room nobody can follow."""
 
 # Live mode only. Scheduled mode must always produce something, or a quiet day
 # leaves the channel empty.

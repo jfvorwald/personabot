@@ -1552,16 +1552,31 @@ class PersonaBot(discord.Client):
         if not reply and not image_prompt:
             return False
 
+        # Always stripped, offered or not: a model that has seen the syntax
+        # will reproduce it, and "<<reply>>" in the channel shows the wiring.
+        reply, as_reply = decide.wants_reply_to(reply)
+
         if reply:
             # Then "type" it at a human rate.
             typing_time = min(len(reply) / TYPING_CPS, TYPING_SECONDS_MAX)
             async with channel.typing():
                 await asyncio.sleep(typing_time)
-                await channel.send(reply[:MAX_DISCORD_CHARS])
+                if as_reply:
+                    log.info("Answering %s directly", message.author.display_name)
+                    try:
+                        await message.reply(reply[:MAX_DISCORD_CHARS])
+                    except discord.HTTPException:
+                        # The target can be gone by now - deleted, or the reply
+                        # is too old to attach to. Say it anyway.
+                        log.info("Could not attach the reply; posting plainly")
+                        await channel.send(reply[:MAX_DISCORD_CHARS])
+                else:
+                    await channel.send(reply[:MAX_DISCORD_CHARS])
             log.info("Posted %d chars after %.1fs typing", len(reply), typing_time)
             self._observe(
                 "reply",
                 chars=len(reply),
+                as_reply=as_reply,
                 path="commission" if image_mode == "commissioned"
                 else "art" if art else "patch" if patch_notes else "normal",
                 to=message.author.display_name,
