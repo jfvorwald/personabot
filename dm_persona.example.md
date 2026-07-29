@@ -37,6 +37,15 @@ distinguish those two constantly.
   the uncertain thing as uncertain, and do not pad either.
 - Be brief when brief is right.
 
+## If it should look at things
+
+Attachments reach it as images, so a profile can ask for real examination
+rather than a reaction: corners and background over subject, small or partial
+text, timestamps and filenames and window chrome, inconsistencies in light and
+edges and compression, and what is conspicuously absent. Whatever you ask for,
+ask it to keep observation and inference apart - the two collapsing into one
+confident sentence is how bad calls get made.
+
 ## What this is not
 
 Not the channel character. No bit, no audience, nothing to keep up.

@@ -46,6 +46,7 @@ import guard
 import imagegen
 import improve
 import react
+import vision
 from decide import fold
 from paths import ROOT, at_root
 from persona import (
@@ -94,6 +95,18 @@ from prompts import (
     SILENCE_OPTION,
 )
 
+
+
+def _with_images(text: str, images: list | None) -> str | list:
+    """Attach image blocks to a user turn, or leave it as a plain string.
+
+    Images go first: the API reads a picture better when the question about it
+    comes after, and this is nearly always "here is a thing, what do you make
+    of it" rather than the other way round.
+    """
+    if not images:
+        return text
+    return [*images, {"type": "text", "text": text}]
 
 
 class PersonaBot(discord.Client):
@@ -580,7 +593,7 @@ class PersonaBot(discord.Client):
         counterpart = any(n in name for n in LIVE_COUNTERPARTS)
         if message.author.bot and not LIVE_REPLY_TO_BOTS and not counterpart:
             return
-        if not message.clean_content.strip():
+        if not message.clean_content.strip() and not message.attachments:
             log.warning(
                 "Message from %s came through empty - MESSAGE CONTENT INTENT is "
                 "probably off in the Developer Portal",
@@ -690,7 +703,9 @@ class PersonaBot(discord.Client):
         """
         if not DM_ENABLED or not self._allowed_in_dm(message):
             return
-        if not message.clean_content.strip():
+        # An attachment with no caption is still a message. It used to be
+        # dropped here, so sending a picture and nothing else reached nothing.
+        if not message.clean_content.strip() and not message.attachments:
             return
 
         today = message.created_at.astimezone(TIMEZONE).date()
@@ -706,6 +721,7 @@ class PersonaBot(discord.Client):
                 # audience is the person waiting.
                 await asyncio.sleep(random.uniform(DM_THINK_MIN, DM_THINK_MAX))
                 transcript, speakers = await self.read_transcript(message.channel)
+                looking_at = await vision.blocks_for(message)
                 image_mode = self._offer_image(
                     message,
                     await self._asks_for_a_picture(transcript, message.clean_content),
@@ -714,6 +730,7 @@ class PersonaBot(discord.Client):
                     transcript,
                     speakers=speakers,
                     direct=True,
+                    images=looking_at,
                     offer_image=bool(image_mode),
                     commissioned=image_mode == "commissioned",
                     ordered=self._ordered(message),
@@ -1467,6 +1484,7 @@ class PersonaBot(discord.Client):
             commissioned = image_mode == "commissioned"
             reply = await self.generate(
                 transcript,
+                images=await vision.blocks_for(message),
                 may_stay_silent=not commissioned,
                 speakers=speakers,
                 offer_image=offered_image,
@@ -1729,7 +1747,12 @@ class PersonaBot(discord.Client):
         return True
 
     async def _generate_direct(
-        self, transcript: str, offer_image: bool, commissioned: bool, ordered: bool
+        self,
+        transcript: str,
+        offer_image: bool,
+        commissioned: bool,
+        ordered: bool,
+        images: list | None = None,
     ) -> str:
         """The DM prompt, built from nothing rather than from the channel one.
 
@@ -1757,7 +1780,7 @@ class PersonaBot(discord.Client):
             max_tokens=4000,
             system=system,
             output_config={"effort": EFFORT},
-            messages=[{"role": "user", "content": user}],
+            messages=[{"role": "user", "content": _with_images(user, images)}],
         )
         if response.stop_reason == "refusal":
             log.warning("Model declined in a DM: %s", response.stop_details)
@@ -1799,7 +1822,7 @@ class PersonaBot(discord.Client):
         speakers: set[int] = set()
         async for msg in channel.history(limit=HISTORY_LIMIT):
             text = msg.clean_content.strip()
-            if not text:
+            if not text and not msg.attachments:
                 continue
             if msg.author.id != self.user.id:
                 speakers.add(msg.author.id)
@@ -1812,7 +1835,8 @@ class PersonaBot(discord.Client):
                     )
             who = "You" if msg.author.id == self.user.id else msg.author.display_name
             stamp = msg.created_at.astimezone(TIMEZONE).strftime("%a %H:%M")
-            lines.append(f"[{stamp}] {who}: {text}")
+            note = vision.describes_attachments(msg)
+            lines.append(f"[{stamp}] {who}: {(text + ' ' + note).strip()}")
         lines.reverse()
         return "\n".join(lines), speakers
 
@@ -1827,6 +1851,7 @@ class PersonaBot(discord.Client):
         commissioned: bool = False,
         ordered: bool = False,
         direct: bool = False,
+        images: list | None = None,
     ) -> str:
         # "You may decline to answer" and "carry this out now" cannot both be
         # in one prompt, so an order replaces the silence option rather than
@@ -1838,7 +1863,7 @@ class PersonaBot(discord.Client):
             # people extracting how Jaq works, and this is the person who wrote
             # him. Withholding his own design from him would be absurd.
             return await self._generate_direct(
-                transcript, offer_image, commissioned, ordered
+                transcript, offer_image, commissioned, ordered, images
             )
 
         framing = FRAMING
@@ -1884,7 +1909,7 @@ class PersonaBot(discord.Client):
             max_tokens=4000,
             system=system,
             output_config={"effort": EFFORT},
-            messages=[{"role": "user", "content": user}],
+            messages=[{"role": "user", "content": _with_images(user, images)}],
         )
 
         if response.stop_reason == "refusal":
