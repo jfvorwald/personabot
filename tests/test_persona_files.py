@@ -9,6 +9,7 @@ start. Import errors are exactly what a unit test is cheapest at catching.
 from __future__ import annotations
 
 import datetime
+import os
 
 import pytest
 
@@ -80,3 +81,33 @@ def test_module_imports(name):
     goes missing from the module that used to own it.
     """
     __import__(name)
+
+
+# --- versioning -------------------------------------------------------------
+
+
+def test_the_version_is_reported_or_degrades_quietly():
+    """A bot that will not start because git moved is worse than a bot that
+    does not know its own version number."""
+    import changelog
+
+    assert changelog.version(cwd="/no/such/repo") == "untagged"
+    here = changelog.version(cwd=os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    assert here and " " not in here
+
+
+def test_version_bumps_follow_the_scheme():
+    """A version is one major feature landing, not a schedule."""
+    import importlib.util
+
+    root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    spec = importlib.util.spec_from_file_location(
+        "release", os.path.join(root, "tools", "release.py")
+    )
+    release = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(release)
+
+    assert release.next_version(None, "minor") == "v0.1.0"
+    assert release.next_version("v0.7.0", "minor") == "v0.8.0"
+    assert release.next_version("v0.7.3", "patch") == "v0.7.4"
+    assert release.next_version("v0.7.3", "major") == "v1.0.0"

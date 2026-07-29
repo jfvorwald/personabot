@@ -419,7 +419,12 @@ class PersonaBot(discord.Client):
         return spent >= LIVE_PER_PERSON_MAX
 
     async def on_ready(self):
-        log.info("Logged in as %s (id=%s)", self.user, self.user.id)
+        log.info(
+            "Logged in as %s (id=%s) running %s",
+            self.user,
+            self.user.id,
+            changelog.version(cwd=ROOT),
+        )
         if self.post_now:
             await self.speak()
             await self.close()

@@ -355,6 +355,20 @@ Every generation logs its reason and the remaining budget, so tune these from
 `live.log` rather than by guessing. Any failure - a filter, a quota, a timeout
 - is silent: the message posts on its own and nothing is said about it.
 
+## Versions
+
+Tags mark pivot points rather than a release schedule - one minor bump per
+major feature landing.
+
+```bash
+git tag -l -n1                              # what shipped when
+git show v0.6.0                             # the commits in that version
+.venv/bin/python tools/release.py           # what would be tagged next
+.venv/bin/python tools/release.py --tag     # cut it
+```
+
+The running version appears in the startup banner and `./restart.sh status`.
+
 ## Cost
 
 Each message is one API call: ~30 short messages of history in, a few hundred

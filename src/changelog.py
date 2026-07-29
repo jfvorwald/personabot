@@ -68,3 +68,31 @@ def summarise(subjects: list[str]) -> str:
     if not subjects:
         return ""
     return "\n".join(f"- {s}" for s in subjects)
+
+
+def version(cwd: str | None = None) -> str:
+    """The current release, as `git describe` sees it.
+
+    "v0.7.0" on a tagged commit, "v0.7.0+3" three commits past one, and
+    "untagged" when there is nothing to describe. Same failure tolerance as
+    everything else here: a bot that will not start because git moved is worse
+    than a bot that does not know its own version number.
+    """
+    try:
+        result = subprocess.run(
+            ["git", "describe", "--tags", "--always"],
+            cwd=cwd,
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return "untagged"
+    described = result.stdout.strip()
+    if result.returncode != 0 or not described:
+        return "untagged"
+    # git describe gives "v0.7.0-3-gabc1234"; the hash is noise in a banner.
+    parts = described.rsplit("-", 2)
+    if len(parts) == 3 and parts[2].startswith("g") and parts[1].isdigit():
+        return f"{parts[0]}+{parts[1]}"
+    return described

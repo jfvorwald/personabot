@@ -250,6 +250,27 @@ The fitness signal is the humans in the room, not the counterpart bot. Two bots
 optimising against each other drift somewhere nobody else enjoys, and neither
 of them can tell.
 
+## A version is one feature landing, not a schedule
+
+Tags mark pivot points: `v0.MINOR.PATCH` while pre-1.0, one minor bump per
+major feature. Pictures was fourteen commits and one version; a good day of
+small fixes is none at all. Cut one when something lands, not on a cadence.
+
+```bash
+.venv/bin/python tools/release.py          # what would be tagged, no tag
+.venv/bin/python tools/release.py --tag    # create it
+```
+
+Tags are annotated and carry the commit subjects in the span, so `git show
+v0.6.0` explains that version without anyone maintaining a changelog - which
+works only because subjects here are already written to be read aloud. It
+refuses on a dirty tree: a tag should point at a state you can return to.
+
+Nothing pushes automatically. `changelog.version()` puts the running version in
+the startup banner and `./restart.sh status`, and degrades to "untagged" rather
+than failing, because a bot that will not start because git moved is worse than
+one that does not know its own version.
+
 ## Commit messages are read out loud
 
 When someone in the channel asks for an update, the bot answers with patch
