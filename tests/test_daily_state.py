@@ -304,3 +304,42 @@ def test_an_existing_file_is_not_clobbered_by_a_dayless_save(
     persona_bot._reply_day = None
     persona_bot._save_day()
     assert json.loads(path.read_text())["replies"] == 58
+
+
+# --- openers have their own budget ------------------------------------------
+#
+# They used to spend the day's replies, so a busy afternoon of conversation
+# left nothing to open the evening with - and on the day this changed, the bot
+# was 76 replies into a budget of 32, meaning hourly openers would have fired
+# exactly zero times.
+
+
+def test_openers_do_not_spend_the_reply_budget(persona_bot, bot_module, monkeypatch):
+    monkeypatch.setattr(bot_module, "IDLE_DAILY_MAX", 24)
+    persona_bot._replies_today = 500
+    persona_bot._daily_budget = 32
+    persona_bot._openers_today = 0
+    # Out of replies, but openers draw on their own allowance.
+    assert persona_bot._out_of_budget() is True
+    assert persona_bot._openers_today < bot_module.IDLE_DAILY_MAX
+
+
+def test_the_opener_count_survives_a_restart(stateful_bot):
+    stateful_bot._openers_today = 7
+    stateful_bot._save_day()
+    stateful_bot._openers_today = 0
+    assert stateful_bot._restore_day(stateful_bot._reply_day) is True
+    assert stateful_bot._openers_today == 7
+
+
+def test_a_new_day_refills_openers(persona_bot, bot_module, monkeypatch):
+    import datetime
+
+    monkeypatch.setattr(bot_module, "LIVE_UNLIMITED", True)
+    persona_bot._save_day = lambda: None
+    persona_bot._schedule_pokes = lambda today: None
+    persona_bot._openers_today = 24
+    persona_bot._unanswered_openers = 2
+    persona_bot._roll_day(datetime.date(2026, 7, 29))
+    assert persona_bot._openers_today == 0
+    assert persona_bot._unanswered_openers == 0

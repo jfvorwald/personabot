@@ -125,6 +125,8 @@ class PersonaBot(discord.Client):
         self._art_today = 0
         self._polls_today = 0
         self._open_polls: list[int] = []
+        self._openers_today = 0
+        self._unanswered_openers = 0
         self._images_today = 0
         # Per person, keyed by Discord user id as a string - a shared counter
         # means the first person to use it up decides how many pictures
@@ -270,6 +272,7 @@ class PersonaBot(discord.Client):
                         "art": self._art_today,
                         "polls": self._polls_today,
                         "open_polls": self._open_polls,
+                        "openers": self._openers_today,
                         "images": self._images_today,
                         "images_by_person": self._images_by_person,
                         "last_image_at": self._last_image_at,
@@ -299,6 +302,7 @@ class PersonaBot(discord.Client):
         self._art_today = state.get("art", 0)
         self._polls_today = state.get("polls", 0)
         self._open_polls = state.get("open_polls", [])
+        self._openers_today = state.get("openers", 0)
         self._images_today = state.get("images", 0)
         self._images_by_person = state.get("images_by_person", {}) or {}
         self._last_image_by_person = state.get("last_image_by_person", {}) or {}
@@ -326,6 +330,8 @@ class PersonaBot(discord.Client):
         # Was omitted here, so the poll budget only ever refilled on a restart:
         # a process that stayed up for a week got two polls for the week.
         self._polls_today = 0
+        self._openers_today = 0
+        self._unanswered_openers = 0
         self._images_today = 0
         self._images_by_person = {}
         # Deliberately NOT cleared: a picture at 23:58 should not be followed
@@ -481,10 +487,12 @@ class PersonaBot(discord.Client):
                 self.idle_opener.start()
                 log.info(
                     "Idle openers: checking every %gmin, after %gh quiet, "
-                    "%.0f%% chance",
+                    "%.0f%% chance, max %s/day, %d unanswered in a row",
                     IDLE_CHECK_MINUTES,
                     IDLE_HOURS,
                     IDLE_CHANCE * 100,
+                    IDLE_DAILY_MAX or "∞",
+                    IDLE_MAX_UNANSWERED,
                 )
             return
         if not self.scheduled_post.is_running():
@@ -1419,10 +1427,15 @@ class PersonaBot(discord.Client):
         last = None
         async for msg in channel.history(limit=1):
             last = msg
-        # Don't talk into the void twice in a row - if the last word was ours,
-        # wait for someone to answer.
+        # Speaking into the void is allowed, but not indefinitely. A person who
+        # has gone unanswered twice stops; the old rule stopped after one,
+        # which meant a channel quiet overnight got a single opener and then
+        # silence no matter how long it stayed quiet.
         if last is not None and last.author.id == self.user.id:
-            return
+            if self._unanswered_openers >= IDLE_MAX_UNANSWERED:
+                return
+        else:
+            self._unanswered_openers = 0
 
         now = discord.utils.utcnow()
         if last is not None:
@@ -1435,7 +1448,9 @@ class PersonaBot(discord.Client):
         today = now.astimezone(TIMEZONE).date()
         if today != self._reply_day:
             self._roll_day(today)
-        if self._out_of_budget():
+        # Openers spend their own budget, not the day's replies. Sharing one
+        # meant a busy afternoon left nothing to open the evening with.
+        if IDLE_DAILY_MAX and self._openers_today >= IDLE_DAILY_MAX:
             return
 
         # Probabilistic, so it doesn't open on a visible clock tick.
@@ -1454,11 +1469,14 @@ class PersonaBot(discord.Client):
                 if not line:
                     return
                 await channel.send(line[:MAX_DISCORD_CHARS])
-                self._replies_today += 1
+                self._openers_today += 1
+                self._unanswered_openers += 1
+                self._observe("opener", quiet_hours=round(quiet_hours, 1), chars=len(line))
                 log.info(
-                    "Opened a thread (%d/%s today)",
-                    self._replies_today,
-                    self._daily_budget if self._daily_budget is not None else "∞",
+                    "Opened a thread (%d/%s openers today, %d unanswered)",
+                    self._openers_today,
+                    IDLE_DAILY_MAX or "∞",
+                    self._unanswered_openers,
                 )
             except Exception:
                 log.exception("Opener failed")

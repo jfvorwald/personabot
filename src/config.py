@@ -90,6 +90,16 @@ LIVE_COUNTERPARTS = [
 IDLE_HOURS = float(os.getenv("IDLE_HOURS", "5"))
 IDLE_CHECK_MINUTES = float(os.getenv("IDLE_CHECK_MINUTES", "30"))
 IDLE_CHANCE = float(os.getenv("IDLE_CHANCE", "0.4"))
+# Openers draw on their own budget rather than the day's replies, the same way
+# reactions do. Sharing one meant a busy afternoon of conversation left nothing
+# to open the evening with - the reply budget exists to stop two bots looping,
+# and an opener into a silent channel is not that.
+IDLE_DAILY_MAX = int(os.getenv("IDLE_DAILY_MAX", "6"))
+# How many times he may open without anyone answering. The old rule was never:
+# if the last message was his, he would not speak again until a human did,
+# which in a channel that has gone quiet overnight means one opener and then
+# nothing. Two is a person trying twice; ten is a person talking to a wall.
+IDLE_MAX_UNANSWERED = int(os.getenv("IDLE_MAX_UNANSWERED", "2"))
 
 # Joining a conversation already in progress. Answering the first message of a
 # thread we aren't part of reads as surveillance, not company - a person who
