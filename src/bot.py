@@ -1792,7 +1792,9 @@ class PersonaBot(discord.Client):
         if response.stop_reason == "refusal":
             log.warning("Model declined in a DM: %s", response.stop_details)
             return ""
-        text = "".join(b.text for b in response.content if b.type == "text").strip()
+        text = guard.de_dash(
+            "".join(b.text for b in response.content if b.type == "text").strip()
+        )
         return text if self._safe_to_send(text, direct=True) else ""
 
     def _safe_to_send(self, text: str, direct: bool = False) -> bool:
@@ -1923,9 +1925,11 @@ class PersonaBot(discord.Client):
             log.warning("Model declined to respond: %s", response.stop_details)
             return ""
 
-        text = "".join(
-            block.text for block in response.content if block.type == "text"
-        ).strip()
+        text = guard.de_dash(
+            "".join(
+                block.text for block in response.content if block.type == "text"
+            ).strip()
+        )
         # Single choke point: every message the bot posts, of every kind, comes
         # back through here, so the guard only has to be applied once.
         if not self._safe_to_send(text):

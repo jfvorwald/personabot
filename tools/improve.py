@@ -34,6 +34,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(
 import anthropic
 import discord
 
+import guard
 import improve
 from config import (
     CHANNEL_ID,
@@ -160,7 +161,11 @@ async def propose(measurements: str, transcript: str) -> str:
     )
     if response.stop_reason == "refusal":
         return ""
-    return "".join(b.text for b in response.content if b.type == "text").strip()
+    # Its output is written to disk and read back by a person and by me. It
+    # produced four em dashes in its first run, so this is not theoretical.
+    return guard.de_dash(
+        "".join(b.text for b in response.content if b.type == "text").strip()
+    )
 
 
 async def main() -> int:

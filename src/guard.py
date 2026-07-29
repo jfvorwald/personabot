@@ -20,6 +20,32 @@ import unicodedata
 # speech, and a guard that blocks ordinary messages gets switched off.
 MIN_TERM_LENGTH = 4
 
+# Written as escapes so this file does not contain the thing it removes.
+DASHES = {
+    "\u2014": "-",   # em dash, the most recognisable machine tell there is
+    "\u2013": "-",   # en dash, the same tell wearing a smaller hat
+    "\u2015": "-",   # horizontal bar
+}
+
+
+def de_dash(text: str) -> str:
+    """Replace typographic dashes with hyphens on the way out.
+
+    The rule was enforced in the prompt files and asked for in the prompt, and
+    nothing checked what the model actually produced. That is the same shape
+    as every other failure in this project: an instruction where a check was
+    needed. The improvement pass proved the point by writing four em dashes
+    into its own output in a single run.
+
+    A substitution rather than a refusal. Blocking a whole message over
+    punctuation would be a worse outcome than the punctuation.
+    """
+    if not text:
+        return text
+    for dash, replacement in DASHES.items():
+        text = text.replace(dash, replacement)
+    return text
+
 
 def _normalise(text: str) -> str:
     """Fold case, unicode, and separators so trivial obfuscation still matches.

@@ -21,10 +21,11 @@ ROOT = os.path.dirname(HERE)
 
 # Written as an escape so this file does not trip its own check.
 EM_DASH = "\u2014"
+EN_DASH = "\u2013"
 
 # Files whose contents are handed to the model verbatim. A stray em dash in one
 # of these does not just look wrong, it demonstrates the habit.
-PROMPT_FILES = ["persona.md", "psychology.md", "src/prompts.py"]
+PROMPT_FILES = ["persona.md", "dm_persona.md", "psychology.md", "src/prompts.py"]
 
 
 def _paths(patterns):
@@ -105,3 +106,31 @@ def test_persona_stands_its_ground():
     body = open(os.path.join(ROOT, "persona.md"), encoding="utf-8").read()
     assert "Never back down" in body
     assert "Refusing to do something is not backing down" in body
+
+
+# --- the check that survives the model ignoring the instruction --------------
+
+
+def test_outgoing_text_has_its_dashes_replaced():
+    """The rule was enforced in the prompt files and asked for in the prompt,
+    and nothing checked what the model actually produced. The improvement pass
+    proved the point by writing four em dashes in a single run."""
+    import guard
+
+    assert guard.de_dash("a line " + EM_DASH + " and more") == "a line - and more"
+    assert guard.de_dash("an en dash " + EN_DASH + " here") == "an en dash - here"
+
+
+def test_de_dash_leaves_ordinary_text_alone():
+    import guard
+
+    for text in ["a hyphen - like this", "15-40 replies", "", "no dashes at all"]:
+        assert guard.de_dash(text) == text
+
+
+def test_de_dash_is_a_substitution_not_a_refusal():
+    """Blocking a whole message over punctuation is worse than the punctuation."""
+    import guard
+
+    assert guard.de_dash(EM_DASH) == "-"
+    assert guard.de_dash("only " + EM_DASH + " that") != ""
