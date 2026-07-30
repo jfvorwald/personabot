@@ -42,6 +42,7 @@ import brain
 import changelog
 import contexts
 import decide
+import gifs
 import guard
 import imagegen
 import improve
@@ -79,6 +80,7 @@ from prompts import (
     DM_DEFAULT_PERSONA,
     DM_FRAMING,
     FRAMING,
+    GIF_OPTION,
     HELP_INTENT_PROMPT,
     HELP_MODE,
     IMAGE_BRIEF_PROMPT,
@@ -157,6 +159,8 @@ class PersonaBot(discord.Client):
         # means the first person to use it up decides how many pictures
         # everyone else gets, and they never find out why.
         self._images_by_person: dict[str, int] = {}
+        self._gifs_by_person: dict[str, int] = {}
+        self._last_gif_by_person: dict[str, float] = {}
         # Epoch seconds, not monotonic: the cooldown has to survive a restart,
         # and a monotonic clock restarts with the process.
         self._last_image_at = 0.0
@@ -300,6 +304,8 @@ class PersonaBot(discord.Client):
                         "openers": self._openers_today,
                         "images": self._images_today,
                         "images_by_person": self._images_by_person,
+                        "gifs_by_person": self._gifs_by_person,
+                        "last_gif_by_person": self._last_gif_by_person,
                         "last_image_at": self._last_image_at,
                         "last_image_by_person": self._last_image_by_person,
                         "budget": self._daily_budget,
@@ -330,6 +336,8 @@ class PersonaBot(discord.Client):
         self._openers_today = state.get("openers", 0)
         self._images_today = state.get("images", 0)
         self._images_by_person = state.get("images_by_person", {}) or {}
+        self._gifs_by_person = state.get("gifs_by_person", {}) or {}
+        self._last_gif_by_person = state.get("last_gif_by_person", {}) or {}
         self._last_image_by_person = state.get("last_image_by_person", {}) or {}
         # Carried across the restart so redeploying is not a way to skip the
         # cooldown, the same reason the reply budget is persisted at all.
@@ -359,6 +367,7 @@ class PersonaBot(discord.Client):
         self._unanswered_openers = 0
         self._images_today = 0
         self._images_by_person = {}
+        self._gifs_by_person = {}
         # Deliberately NOT cleared: a picture at 23:58 should not be followed
         # by another at 00:01 just because the date rolled.
         self._brushed_off_today = False
@@ -1208,6 +1217,79 @@ class PersonaBot(discord.Client):
         )
         return text if self._safe_to_send(text) else ""
 
+    def _offer_gif(self, message) -> bool:
+        """Should this reply be allowed to carry a GIF?
+
+        Same shape as the picture gate and rarer for a different reason. A
+        picture that misses is a bot being odd; a reaction GIF that misses is a
+        bot visibly aiming at a joke and not landing it, which everyone can
+        see. Per person, because a shared counter means the first person to use
+        it up decides how many everyone else gets.
+        """
+        if not (GIF_ENABLED and gifs.available(TENOR_KEY)) or message is None:
+            return False
+        who = str(message.author.id)
+        last = self._last_gif_by_person.get(who, 0.0)
+        since = time.time() - last if last else float("inf")
+        blocked = decide.image_blocked(
+            spent=self._gifs_by_person.get(who, 0),
+            cap=GIF_PER_PERSON_MAX,
+            seconds_since_last=since,
+            cooldown=GIF_COOLDOWN_SECONDS,
+        )
+        if blocked:
+            log.debug("No GIF offered - %s", blocked)
+            return False
+        if random.random() > GIF_BASE_RATE:
+            return False
+        log.info(
+            "Offering a GIF on this reply (%s has had %d/%s today)",
+            message.author.display_name,
+            self._gifs_by_person.get(who, 0),
+            GIF_PER_PERSON_MAX or "\u221e",
+        )
+        return True
+
+    def _send_gif_later(self, channel, terms: str, who: str) -> None:
+        """Search and post without holding the reply lock."""
+        task = asyncio.create_task(self._deliver_gif(channel, terms, who))
+        self._pending.add(task)
+        task.add_done_callback(self._pending.discard)
+
+    async def _deliver_gif(self, channel, terms: str, who: str) -> None:
+        # Claimed before the search, like every other budget here: several can
+        # be in flight and checking then spending seconds searching lets all of
+        # them pass the same check.
+        now = time.time()
+        self._gifs_by_person[who] = self._gifs_by_person.get(who, 0) + 1
+        self._last_gif_by_person[who] = now
+        self._save_day()
+        try:
+            url = await gifs.find(
+                terms, key=TENOR_KEY, content_filter=GIF_CONTENT_FILTER
+            )
+        except Exception:
+            log.exception("GIF search raised")
+            url = None
+        if not url:
+            # Hand the slot back - nothing was posted. The cooldown stands, so a
+            # run of empty searches is not a retry loop.
+            if self._gifs_by_person.get(who):
+                self._gifs_by_person[who] -= 1
+            self._save_day()
+            log.info("No GIF this time; the message went out on its own")
+            return
+        try:
+            await channel.send(url)
+        except discord.HTTPException:
+            log.exception("Could not post the GIF")
+            if self._gifs_by_person.get(who):
+                self._gifs_by_person[who] -= 1
+            self._save_day()
+            return
+        log.info("Posted a GIF")
+        self._observe("gif", terms=terms[:80], who=who)
+
     def _picture_refused(self, message, offered: bool) -> bool:
         """Did someone ask for a picture they are not getting?
 
@@ -1611,9 +1693,13 @@ class PersonaBot(discord.Client):
                 # Never answer as though it saw something it did not. A gap the
                 # model is not told about is a gap it will talk over.
                 transcript += vision.unreadable_note(unreadable)
+            # Never both. A generated picture and a reaction GIF on one message
+            # is a bot showing off two features rather than a person talking.
+            offer_gif = not image_mode and self._offer_gif(message)
             reply = await self.generate(
                 transcript,
                 images=channel_images,
+                offer_gif=offer_gif,
                 may_stay_silent=not commissioned,
                 speakers=speakers,
                 offer_image=offered_image,
@@ -1677,6 +1763,12 @@ class PersonaBot(discord.Client):
         # Always stripped, offered or not: a model that has seen the syntax
         # will reproduce it, and "<<reply>>" in the channel shows the wiring.
         reply, as_reply = decide.wants_reply_to(reply)
+        reply, gif_terms = decide.extract_gif_terms(reply)
+        if gif_terms and not offer_gif:
+            log.info("Asked for a GIF unprompted; dropping it")
+            gif_terms = ""
+        if not reply and not image_prompt and not gif_terms:
+            return False
 
         if reply:
             # Then "type" it at a human rate.
@@ -1706,6 +1798,10 @@ class PersonaBot(discord.Client):
                 ally=self._is_ally(message),
                 text=reply[:400],
             )
+        if gif_terms:
+            # After the words, the way anyone posts a reaction: the line lands
+            # and then the picture arrives under it.
+            self._send_gif_later(channel, gif_terms, str(message.author.id))
         if image_prompt:
             # Follows a moment later, the way a person sends the picture after
             # the line rather than holding the line back until it renders.
@@ -1998,6 +2094,7 @@ class PersonaBot(discord.Client):
         ordered: bool = False,
         direct: bool = False,
         images: list | None = None,
+        offer_gif: bool = False,
     ) -> str:
         # "You may decline to answer" and "carry this out now" cannot both be
         # in one prompt, so an order replaces the silence option rather than
@@ -2015,6 +2112,7 @@ class PersonaBot(discord.Client):
         framing = FRAMING
         framing += "" if ordered else SILENCE_OPTION if may_stay_silent else ""
         framing += OBEY_PROMPT if ordered else ""
+        framing += GIF_OPTION if offer_gif else ""
         if commissioned:
             framing += IMAGE_COMMISSIONED
         elif offer_image:

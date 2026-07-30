@@ -118,6 +118,26 @@ conversation where you never speak is not a conversation."""
 
 PASS_TOKEN = "<pass>"
 
+# Only appended when the budget, the cooldown and the dice have already said
+# yes, so it is never offered on a message where one is impossible. Short, for
+# the same reason the picture affordance is: the more a prompt says about a
+# capability the more the model reaches for it.
+GIF_OPTION = """
+- You may answer with a GIF instead of, or as well as, words. This is how this \
+room already talks, so it should look like everyone else doing it rather than a \
+feature being demonstrated.
+- To do it, put this on its own line: <<gif: what to search for>>
+- Search terms, not a description. Two to four words of the kind someone types \
+into a GIF picker - a reaction, an expression, a recognisable moment. Not a \
+sentence, and not an explanation of the joke.
+- A GIF on its own is usually the stronger move. If the GIF is the reply, send \
+nothing with it.
+- Only when it genuinely lands. A reaction that nearly fits is worse than words, \
+because everyone can see what you were going for and that you missed. If nothing \
+obvious comes to mind, just talk.
+- Never announce it, never caption it, never explain what it is. The line is \
+removed before your message posts."""
+
 # FRAMING opens by describing a channel with several people in it and a
 # transcript to read as a room. In a one-to-one that is simply false, and a
 # model told it is in a group behaves like it is in one - answering as though

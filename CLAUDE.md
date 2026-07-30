@@ -225,6 +225,26 @@ An order does not reach the privacy limits or the output guard. The prompt says
 so, and `guard.py` enforces it in code regardless of what the model was told.
 Do not add an exception for OBEY there.
 
+## A bad GIF is worse than no GIF
+
+`src/gifs.py` searches Tenor with terms the model chose and posts the URL, which
+is how the humans in the channel do it - Discord expands the link itself, so the
+artefact looks like everyone else's rather than an uploaded file.
+
+Rarer than pictures, and for a different reason: a picture that misses reads as
+a bot being odd, while a reaction GIF that misses is a bot visibly aiming at a
+joke and failing in front of everyone. The prompt therefore tells it to decline
+rather than settle, and only the top few Tenor results are ever considered,
+because relevance past that is worse than silence.
+
+`GIF_CONTENT_FILTER` defaults to `medium`, not `off`. The character is crude by
+design; Tenor's content is not the character's, and an unexpectedly graphic
+result is somebody else's material appearing under his name in a friend's
+server. Do not loosen it to make a joke land.
+
+Never a generated picture and a GIF on the same message. That is two features
+being demonstrated rather than a person talking.
+
 ## Helping is a different mode, and consults the psychology
 
 Someone actually stuck gets a researched answer rather than a line. Detection is

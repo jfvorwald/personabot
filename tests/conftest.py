@@ -87,6 +87,8 @@ def persona_bot(bot_module):
     b._unanswered_openers = 0
     b._images_today = 0
     b._images_by_person = {}
+    b._gifs_by_person = {}
+    b._last_gif_by_person = {}
     b._last_image_at = 0.0
     b._last_image_by_person = {}
     b._replies_today = 0

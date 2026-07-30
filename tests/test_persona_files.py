@@ -72,7 +72,7 @@ def test_missing_psychology_is_not_fatal(monkeypatch):
 @pytest.mark.parametrize(
     "name",
     ["config", "prompts", "decide", "react", "persona", "brain", "guard",
-     "changelog", "imagegen", "contexts", "improve", "profiles", "vision", "bot"],
+     "changelog", "imagegen", "contexts", "improve", "profiles", "vision", "gifs", "bot"],
 )
 def test_module_imports(name):
     """A missing import in any module is a bot that will not start.
