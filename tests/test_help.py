@@ -159,3 +159,81 @@ def test_helping_is_kept_distinct_from_influence():
         body = f.read()
     assert "deliberately excluded" in body
     assert "not the same subject" in body
+
+
+# --- not understanding is different from being stuck ------------------------
+#
+# The first version was built entirely around broken things, and every request
+# for an explanation reached nothing: "what actually is a vpn" failed both the
+# pre-filter and the judgement.
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "what actually is a vpn, like what does it do",
+        "i dont understand how any of this ai stuff works",
+        "whats the difference between ddr4 and ddr5, does it matter",
+        "someone explain what a gpu even does",
+        "is a nas worth it over just an external drive",
+        "eli5 what a container actually is",
+    ],
+)
+def test_explanation_requests_reach_the_real_check(text):
+    assert decide.might_need_help(text) is True
+
+
+def test_both_kinds_of_yes_are_named():
+    body = prompts.HELP_INTENT_PROMPT
+    assert "being STUCK" in body
+    assert "not\nUNDERSTANDING something" in body or "UNDERSTANDING something" in body
+
+
+def test_the_subject_decides_not_the_tone():
+    """"what does a gpu even do" is someone who does not know what a gpu does.
+    The same shape aimed at a person is a dig."""
+    body = prompts.HELP_INTENT_PROMPT
+    assert "LOOK AT THE SUBJECT, NOT THE TONE" in body
+    assert "aimed at a PERSON" in body
+
+
+def test_borderline_resolves_toward_helping_except_for_a_life():
+    """The tie-break that recovered the misses, with the one exception that
+    must never be traded away."""
+    body = prompts.HELP_INTENT_PROMPT
+    assert "BORDERLINE, ANSWER YES" in body
+    assert "it is absolute" in body
+
+
+def test_help_mode_explains_at_their_level():
+    body = prompts.HELP_MODE
+    assert "Start from what they already know" in body
+    assert "One concrete comparison" in body
+
+
+def test_help_mode_forbids_talking_down():
+    """Being talked down to is worse than being unanswered."""
+    body = prompts.HELP_MODE
+    assert "never explain what they clearly \\\nalready know" in body or "already know" in body
+    assert "talking down" in body
+
+
+# --- the persona claims the competence --------------------------------------
+
+
+def test_the_persona_establishes_technical_expertise():
+    """It established none at all, so a technical question landed on a
+    character with no reason to know the answer."""
+    from paths import at_root
+
+    try:
+        with open(at_root("persona.md"), encoding="utf-8") as f:
+            body = f.read()
+    except OSError:
+        pytest.skip("persona.md is untracked; nothing to check on a fresh clone")
+    assert "You actually know technology" in body
+    assert "Pitch it at them" in body
+    # Competence without performance: the explanation is the demonstration.
+    assert "Do not perform expertise" in body
+    # Unimpressed is in character; unhelpful is not.
+    assert "still answer it" in body

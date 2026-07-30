@@ -249,6 +249,18 @@ behaviour.
   never a problem to solve, and the intent prompt rules that out explicitly
   rather than leaving it to judgement.
 
+**Two kinds of YES: stuck, and not understanding.** The first version was built
+entirely around broken things, and every request for an explanation reached
+nothing - "what actually is a vpn" failed both the pre-filter and the
+judgement. The awkward cases are decided by the *subject*, not the tone: a
+dismissive question about a technology is still someone who does not know
+("what does a gpu even do"), while the same shape aimed at a person is a dig.
+Borderline resolves toward helping, with one absolute exception for anything
+about a person's life going wrong.
+
+`persona.md` had to claim the competence too. A technical question was landing
+on a character with no stated reason to know the answer.
+
 Do not make it more eager. A false positive is a bot that answers grievances
 nobody wanted answered, which is the exact failure the reactance research
 describes.

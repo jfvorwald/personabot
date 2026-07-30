@@ -463,6 +463,12 @@ TROUBLE_WORDS = {
     "config", "settings", "keeps", "again", "anyone", "supposed", "tried",
     "trying", "lag", "lagging", "disconnect", "disconnected", "timeout",
     "slow", "missing", "lost", "reset", "recover", "corrupt", "corrupted",
+    # Not being stuck, but not understanding. Built the first version around
+    # broken things and missed every request for an explanation - "what
+    # actually is a vpn" reached nothing at all.
+    "what", "whats", "explain", "difference", "understand", "mean", "means",
+    "meaning", "actually", "even", "point", "versus", "vs", "better", "worth",
+    "should", "which", "eli5",
 }
 
 
