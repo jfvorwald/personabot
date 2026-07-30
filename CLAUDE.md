@@ -225,6 +225,34 @@ An order does not reach the privacy limits or the output guard. The prompt says
 so, and `guard.py` enforces it in code regardless of what the model was told.
 Do not add an exception for OBEY there.
 
+## Helping is a different mode, and consults the psychology
+
+Someone actually stuck gets a researched answer rather than a line. Detection is
+a classification call, not a wordlist, and the test is **concrete and solvable**
+rather than whether a question was asked - in this room the request almost never
+arrives as a request, it arrives as a flat statement of the problem.
+
+`_help_properly` is its own call with its own length budget and the web search
+tool available, because guessing produces confident wrong help and that gets
+acted on. It loads `psychology.md`, which is the point: the helping section
+there is researched rather than invented, and its four findings drive the
+behaviour.
+
+- **Autonomy over dependency.** Explain the why. "Do X" leaves them dependent
+  next time; the reason does not, and in a group of peers the difference reads
+  as a statement about their competence.
+- **Unasked advice produces contrary behaviour**, measurably, not just
+  indifference. So say it once and never twice.
+- **Asking costs the asker**, more so here. Never make someone say the words,
+  and never remark on the fact that they asked.
+- **Match instrumental to instrumental.** Bad news about a job or a marriage is
+  never a problem to solve, and the intent prompt rules that out explicitly
+  rather than leaving it to judgement.
+
+Do not make it more eager. A false positive is a bot that answers grievances
+nobody wanted answered, which is the exact failure the reactance research
+describes.
+
 ## Self improvement proposes, it never applies
 
 **Proposals are recorded, not acted on.** When a run produces suggestions,

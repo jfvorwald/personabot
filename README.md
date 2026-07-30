@@ -355,6 +355,28 @@ Every generation logs its reason and the remaining budget, so tune these from
 `live.log` rather than by guessing. Any failure - a filter, a quota, a timeout
 - is silent: the message posts on its own and nothing is said about it.
 
+## Real help
+
+Someone actually stuck gets a researched answer instead of a line. Detection is
+a judgement call rather than a keyword match, and the test is whether the
+problem is **concrete and solvable**, not whether anyone asked a question -
+people in a group like this mostly do not ask, they state the problem and wait.
+
+When it fires, the reply gets its own length budget and can search the web
+rather than guess, because confident wrong help gets acted on.
+
+It deliberately does not fire on venting, arguments, rhetorical questions, or
+bad news. `psychology.md` carries the research behind that: help threatens
+self-esteem, advice nobody asked for produces contrary behaviour rather than
+indifference, and a mismatch between emotional and instrumental support is
+worse than a smaller amount of the right one.
+
+| Knob | Default | |
+|---|---|---|
+| `HELP_ENABLED` | true | the whole feature |
+| `HELP_SEARCH` | true | look it up when unsure |
+| `HELP_MAX_TOKENS` | 2000 | a real answer needs room |
+
 ## Versions
 
 Tags mark pivot points rather than a release schedule - one minor bump per

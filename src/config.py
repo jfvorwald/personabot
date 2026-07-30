@@ -229,6 +229,19 @@ DM_PERSONA_FILE = os.getenv("DM_PERSONA_FILE", "dm_persona.md")
 DM_THINK_MIN = float(os.getenv("DM_THINK_MIN", "1"))
 DM_THINK_MAX = float(os.getenv("DM_THINK_MAX", "4"))
 
+# Real help. Someone actually stuck gets a researched answer rather than a
+# line, which means a different prompt and, when the answer is not already
+# known, a web search. Off by default for anyone cloning this: it spends more
+# per reply and enables a server-side tool.
+HELP_ENABLED = os.getenv("HELP_ENABLED", "true").lower() == "true"
+# Let the model search when it is unsure. The alternative is guessing, and
+# confident wrong help gets acted on.
+HELP_SEARCH = os.getenv("HELP_SEARCH", "true").lower() == "true"
+HELP_SEARCH_MAX = int(os.getenv("HELP_SEARCH_MAX", "4"))
+# A real answer needs room. The channel's usual couple of sentences is the
+# wrong budget for explaining why something is broken.
+HELP_MAX_TOKENS = int(os.getenv("HELP_MAX_TOKENS", "2000"))
+
 # Names the bot answers to, beyond a real @mention. Deliberately does NOT
 # include a bare "jaq": the persona is called Jaq and so is its creator, so a
 # bare "jaq" in this channel is ambiguous and usually means the human.

@@ -79,6 +79,8 @@ from prompts import (
     DM_DEFAULT_PERSONA,
     DM_FRAMING,
     FRAMING,
+    HELP_INTENT_PROMPT,
+    HELP_MODE,
     IMAGE_BRIEF_PROMPT,
     IMAGE_BRIEF_RETRY,
     IMAGE_COMMISSIONED,
@@ -1109,6 +1111,103 @@ class PersonaBot(discord.Client):
         event.update(fields)
         improve.record(event, at_root(IMPROVE_LOG))
 
+    async def _needs_real_help(self, transcript: str, asked: str) -> bool:
+        """Is this person actually stuck, or is this banter?
+
+        A judgement rather than a wordlist. "anyone know why this keeps
+        failing" and "why does everything I touch break" are one word apart and
+        want opposite answers, and the research is clear that getting it wrong
+        is worse than doing nothing: advice nobody asked for produces contrary
+        behaviour rather than indifference.
+
+        Same shape as the picture-intent check, including naming the message
+        explicitly - the transcript is read after the think delay, so its last
+        line is whatever arrived during those seconds.
+        """
+        if not HELP_ENABLED:
+            return False
+        content = (
+            f"Conversation so far, for context only:\n\n{transcript[-2000:]}\n\n"
+            f"---\n\nThe message to judge:\n\n{asked.strip()[:800]}"
+        )
+        try:
+            response = await self.claude.messages.create(
+                model=MODEL,
+                max_tokens=5,
+                system=HELP_INTENT_PROMPT,
+                messages=[{"role": "user", "content": content}],
+            )
+        except Exception:
+            log.exception("Help check failed; treating as ordinary conversation")
+            return False
+        answer = "".join(
+            b.text for b in response.content if b.type == "text"
+        ).strip().upper()
+        wants = answer.startswith("YES")
+        log.info("Help intent: %s for %r", "YES" if wants else "no", asked.strip()[:90])
+        return wants
+
+    async def _help_properly(self, transcript: str, speakers) -> str:
+        """Answer someone who is actually stuck, researching if need be.
+
+        Its own call rather than a block bolted onto the ordinary reply: the
+        length budget is different, the psychology it should be reading is
+        different, and it may need to go and look something up. A line built
+        for banter is the wrong shape for explaining why something is broken.
+        """
+        system = self.persona
+        if self.psychology:
+            # The whole point of consulting it. The helping section is the part
+            # that matters here: autonomy over dependency, no unasked advice
+            # twice, and never making someone say the words out loud.
+            system = f"{system}\n\n---\n\n{self.psychology}"
+        system = f"{system}\n\n---\n\n{FRAMING}{HELP_MODE}"
+        system = f"{system}\n\n---\n\n{CONFIDENTIALITY}"
+        if BRAIN_ENABLED:
+            try:
+                notes = brain.load_for(speakers or set())
+            except Exception:
+                notes = ""
+            if notes:
+                system = f"{system}\n\n---\n\n{notes}"
+
+        tools = []
+        if HELP_SEARCH:
+            tools = [{
+                "type": "web_search_20260209",
+                "name": "web_search",
+                "max_uses": HELP_SEARCH_MAX,
+            }]
+        try:
+            response = await self.claude.messages.create(
+                model=MODEL,
+                max_tokens=HELP_MAX_TOKENS,
+                system=system,
+                tools=tools,
+                messages=[{
+                    "role": "user",
+                    "content": (
+                        f"Here is the recent conversation in the channel:\n\n"
+                        f"{transcript}\n\nSomeone here needs a real answer. "
+                        "Give them one."
+                    ),
+                }],
+            )
+        except Exception:
+            log.exception("Help reply failed; falling back to an ordinary one")
+            return ""
+        if response.stop_reason == "refusal":
+            return ""
+        searched = sum(
+            1 for b in response.content if getattr(b, "type", "") == "server_tool_use"
+        )
+        if searched:
+            log.info("Looked it up (%d search%s)", searched, "es" if searched > 1 else "")
+        text = guard.de_dash(
+            "".join(b.text for b in response.content if b.type == "text").strip()
+        )
+        return text if self._safe_to_send(text) else ""
+
     def _picture_refused(self, message, offered: bool) -> bool:
         """Did someone ask for a picture they are not getting?
 
@@ -1383,6 +1482,7 @@ class PersonaBot(discord.Client):
         elif (
             self._direct_question(message)
             or self._wants_patch_notes(message)
+            or (HELP_ENABLED and decide.might_need_help(message.clean_content))
             or (ART_ENABLED and decide.is_art_request(message.clean_content))
             or (POLL_ENABLED and decide.is_poll_request(message.clean_content))
         ):
@@ -1485,6 +1585,28 @@ class PersonaBot(discord.Client):
             # on one message is a bot showing off what it can do.
             commissioned = image_mode == "commissioned"
             channel_images, unreadable = await vision.blocks_for(message)
+            # Someone actually stuck gets a real answer, not a line with a
+            # picture attached. Checked before the ordinary reply so the two
+            # cannot both happen.
+            if (
+                HELP_ENABLED
+                and image_mode != "commissioned"
+                and decide.might_need_help(message.clean_content)
+                and await self._needs_real_help(transcript, message.clean_content)
+            ):
+                helped = await self._help_properly(transcript, speakers)
+                if helped:
+                    typing_time = min(len(helped) / TYPING_CPS, TYPING_SECONDS_MAX)
+                    async with channel.typing():
+                        await asyncio.sleep(typing_time)
+                        await channel.send(helped[:MAX_DISCORD_CHARS])
+                    log.info("Helped with %d chars", len(helped))
+                    self._observe(
+                        "help", chars=len(helped), to=message.author.display_name
+                    )
+                    self._react_later(message, replied=True)
+                    return True
+                log.info("Help produced nothing; answering normally")
             if unreadable:
                 # Never answer as though it saw something it did not. A gap the
                 # model is not told about is a gap it will talk over.

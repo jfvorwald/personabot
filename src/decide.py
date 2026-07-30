@@ -450,6 +450,36 @@ def strip_attachment_notes(text: str) -> str:
 _REPLY_FLAG = re.compile(r"<<\s*reply\s*>>", re.IGNORECASE)
 
 
+# A free pre-filter for the help check. The classification call is what decides;
+# this only avoids paying for it on messages that are plainly not a problem.
+# Deliberately loose - a false positive costs one cheap call, and a false
+# negative costs someone a real answer.
+TROUBLE_WORDS = {
+    "broken", "broke", "breaking", "error", "errors", "fails", "failing",
+    "failed", "crash", "crashes", "crashing", "bug", "bugged", "stuck",
+    "wrong", "issue", "problem", "help", "why", "how", "cant", "can't",
+    "cannot", "wont", "won't", "doesnt", "doesn't", "isnt", "isn't", "not",
+    "fix", "fixed", "install", "installed", "update", "updated", "setup",
+    "config", "settings", "keeps", "again", "anyone", "supposed", "tried",
+    "trying", "lag", "lagging", "disconnect", "disconnected", "timeout",
+    "slow", "missing", "lost", "reset", "recover", "corrupt", "corrupted",
+}
+
+
+def might_need_help(text: str) -> bool:
+    """Cheap gate before spending a call on the real judgement.
+
+    Loose on purpose. The expensive check is what decides, and the asymmetry
+    matters: a false positive here costs one small classification, a false
+    negative costs somebody the answer they needed.
+    """
+    lowered = text.strip().lower()
+    if not lowered or len(lowered.split()) < 3:
+        return False
+    words = {w.strip("?!.,:;\"'()") for w in lowered.split()}
+    return bool(words & TROUBLE_WORDS) or lowered.endswith("?")
+
+
 def wants_reply_to(text: str) -> tuple[str, bool]:
     """Split a message into what posts and whether to attach it to its target.
 
