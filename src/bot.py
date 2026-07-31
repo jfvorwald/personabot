@@ -1279,13 +1279,19 @@ class PersonaBot(discord.Client):
     def _picture_refused(self, message, offered: bool) -> bool:
         """Did someone ask for a picture they are not getting?
 
-        The model needs telling. Left to work it out, it wrote a description of
-        a picture as its message and posted it with nothing underneath, which
-        is worse than either outcome on its own and is how this failed live.
+        The model needs telling. Left to work it out it wrote a description of
+        a picture and posted it with nothing underneath; told only not to
+        describe one, it announced that one had been "rendered" instead, and
+        the asker spent two messages looking for it.
+
+        Also covers the follow-up. "wheres the picture" is not a new request -
+        it is somebody who has noticed - and it needs the same block or the
+        answer becomes a joke about the software failing.
         """
         if offered or message is None:
             return False
-        return decide.is_picture_request(message.clean_content)
+        text = message.clean_content
+        return decide.is_picture_request(text) or decide.mentions_a_picture(text)
 
     def _image_context(self, transcript: str) -> str:
         """A world to set the picture in, if the room is talking about one.

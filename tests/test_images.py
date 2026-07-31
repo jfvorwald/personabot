@@ -1066,3 +1066,50 @@ def test_imagine_yourself_commissions_for_an_ally(ready):
 
 def test_imagine_yourself_still_gets_a_stranger_nothing(ready):
     assert ready._offer_image(_pic_msg("imagine yourself in azeroth")) != "commissioned"
+
+
+# --- a refusal must not become a claim --------------------------------------
+#
+# Live: Zack asked for an image, the refusal fired correctly, and the reply
+# opened "there it is ... finally rendered as azeroth pride fanart". Not a
+# description, so the rule against describing did not catch it. He then spent
+# two messages asking where the picture was while Jaq blamed the servers.
+
+
+def test_the_block_forbids_claiming_one_exists():
+    body = prompts.IMAGE_DECLINED
+    assert "NEVER claim or imply that a picture exists" in body
+    for phrase in ('"there it is"', '"here you \\\ngo"', "rendered"):
+        assert phrase.replace("\\\n", "") in body.replace("\\\n", "")
+
+
+def test_the_block_covers_being_asked_again():
+    """"wheres the picture" is not a new request, it is somebody who noticed."""
+    body = prompts.IMAGE_DECLINED
+    assert "If they ask again where it is" in body
+    assert "no picture" in body
+
+
+def test_the_block_forbids_blaming_the_software():
+    """He joked that Azeroth was down. Ben agreed it had not loaded. Two bots
+    corroborating a picture that never existed."""
+    body = prompts.IMAGE_DECLINED
+    assert "Do not \nblame the software" in body or "blame the software" in body
+    assert "joke that it failed to load" in body
+
+
+def test_a_follow_up_about_the_picture_is_still_refused(persona_bot):
+    """The original ask carries the block; so must the message after it."""
+    for text in ("wheres the picture", "I dont see the picture", "where is it"):
+        msg = FakeMessage(FakeAuthor("Zack Kross", "slaymakerlol"), text)
+        assert persona_bot._picture_refused(msg, offered=False) is (
+            "picture" in text
+        )
+
+
+def test_the_original_request_is_still_refused(persona_bot):
+    msg = FakeMessage(
+        FakeAuthor("Zack Kross", "slaymakerlol"),
+        "generate an image of ben kissing mojito during a pride parade",
+    )
+    assert persona_bot._picture_refused(msg, offered=False) is True
