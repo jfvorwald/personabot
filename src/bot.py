@@ -1226,7 +1226,10 @@ class PersonaBot(discord.Client):
         see. Per person, because a shared counter means the first person to use
         it up decides how many everyone else gets.
         """
-        if not (GIF_ENABLED and gifs.available(TENOR_KEY)) or message is None:
+        if not GIF_ENABLED or message is None:
+            return False
+        if not gifs.load():
+            # No pool, no feature. Nothing to offer and nothing to explain.
             return False
         who = str(message.author.id)
         last = self._last_gif_by_person.get(who, 0.0)
@@ -1250,45 +1253,28 @@ class PersonaBot(discord.Client):
         )
         return True
 
-    def _send_gif_later(self, channel, terms: str, who: str) -> None:
-        """Search and post without holding the reply lock."""
-        task = asyncio.create_task(self._deliver_gif(channel, terms, who))
-        self._pending.add(task)
-        task.add_done_callback(self._pending.discard)
+    async def _post_gif(self, channel, pick: int, who: str) -> bool:
+        """Post the GIF the model picked, if it picked one that exists.
 
-    async def _deliver_gif(self, channel, terms: str, who: str) -> None:
-        # Claimed before the search, like every other budget here: several can
-        # be in flight and checking then spending seconds searching lets all of
-        # them pass the same check.
-        now = time.time()
-        self._gifs_by_person[who] = self._gifs_by_person.get(who, 0) + 1
-        self._last_gif_by_person[who] = now
-        self._save_day()
+        No search and no fallback. An out-of-range number is a miss, and a GIF
+        nobody chose is exactly the approximate reaction this feature exists to
+        avoid - so it posts nothing rather than something adjacent.
+        """
+        chosen = gifs.choose(gifs.load(), pick)
+        if chosen is None:
+            log.info("GIF %s is not in the pool; posting nothing", pick)
+            return False
         try:
-            url = await gifs.find(
-                terms, key=TENOR_KEY, content_filter=GIF_CONTENT_FILTER
-            )
-        except Exception:
-            log.exception("GIF search raised")
-            url = None
-        if not url:
-            # Hand the slot back - nothing was posted. The cooldown stands, so a
-            # run of empty searches is not a retry loop.
-            if self._gifs_by_person.get(who):
-                self._gifs_by_person[who] -= 1
-            self._save_day()
-            log.info("No GIF this time; the message went out on its own")
-            return
-        try:
-            await channel.send(url)
+            await channel.send(chosen.url)
         except discord.HTTPException:
             log.exception("Could not post the GIF")
-            if self._gifs_by_person.get(who):
-                self._gifs_by_person[who] -= 1
-            self._save_day()
-            return
-        log.info("Posted a GIF")
-        self._observe("gif", terms=terms[:80], who=who)
+            return False
+        self._gifs_by_person[who] = self._gifs_by_person.get(who, 0) + 1
+        self._last_gif_by_person[who] = time.time()
+        self._save_day()
+        log.info("Posted a GIF (%s)", ", ".join(chosen.tags) or chosen.url)
+        self._observe("gif", tags=", ".join(chosen.tags)[:80], who=who)
+        return True
 
     def _picture_refused(self, message, offered: bool) -> bool:
         """Did someone ask for a picture they are not getting?
@@ -1763,11 +1749,11 @@ class PersonaBot(discord.Client):
         # Always stripped, offered or not: a model that has seen the syntax
         # will reproduce it, and "<<reply>>" in the channel shows the wiring.
         reply, as_reply = decide.wants_reply_to(reply)
-        reply, gif_terms = decide.extract_gif_terms(reply)
-        if gif_terms and not offer_gif:
-            log.info("Asked for a GIF unprompted; dropping it")
-            gif_terms = ""
-        if not reply and not image_prompt and not gif_terms:
+        reply, gif_pick = decide.extract_gif_terms(reply)
+        if gif_pick and not offer_gif:
+            log.info("Picked a GIF unprompted; dropping it")
+            gif_pick = 0
+        if not reply and not image_prompt and not gif_pick:
             return False
 
         if reply:
@@ -1798,10 +1784,11 @@ class PersonaBot(discord.Client):
                 ally=self._is_ally(message),
                 text=reply[:400],
             )
-        if gif_terms:
+        if gif_pick:
             # After the words, the way anyone posts a reaction: the line lands
-            # and then the picture arrives under it.
-            self._send_gif_later(channel, gif_terms, str(message.author.id))
+            # and the picture arrives under it. Posted inline rather than in a
+            # background task - there is no search to wait on now.
+            await self._post_gif(channel, gif_pick, str(message.author.id))
         if image_prompt:
             # Follows a moment later, the way a person sends the picture after
             # the line rather than holding the line back until it renders.
@@ -2112,7 +2099,13 @@ class PersonaBot(discord.Client):
         framing = FRAMING
         framing += "" if ordered else SILENCE_OPTION if may_stay_silent else ""
         framing += OBEY_PROMPT if ordered else ""
-        framing += GIF_OPTION if offer_gif else ""
+        if offer_gif:
+            pool = gifs.load()
+            menu = gifs.catalogue(pool)
+            # Only offered when there is something to offer. A menu of nothing
+            # is an instruction to invent a GIF.
+            if menu:
+                framing += GIF_OPTION.format(catalogue=menu)
         if commissioned:
             framing += IMAGE_COMMISSIONED
         elif offer_image:

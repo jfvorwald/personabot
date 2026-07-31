@@ -225,25 +225,26 @@ An order does not reach the privacy limits or the output guard. The prompt says
 so, and `guard.py` enforces it in code regardless of what the model was told.
 Do not add an exception for OBEY there.
 
-## A bad GIF is worse than no GIF
+## A bad GIF is worse than no GIF, which is why there is no search
 
-`src/gifs.py` searches Tenor with terms the model chose and posts the URL, which
-is how the humans in the channel do it - Discord expands the link itself, so the
-artefact looks like everyone else's rather than an uploaded file.
+GIFs come from `gifs.md`, a pool Jack curates, not an API. Tenor stopped issuing
+keys in January 2026 and began erroring in June; Discord's picker moved to a
+client-side service that exposes nothing a bot can call. But the pool is the
+better design regardless: a reaction that nearly fits reads worse than words,
+because everyone can see what was aimed at, and searching a public index gambles
+on that every single time. Every entry in the pool already fits, so the model
+chooses between good options instead of hoping.
 
-Rarer than pictures, and for a different reason: a picture that misses reads as
-a bot being odd, while a reaction GIF that misses is a bot visibly aiming at a
-joke and failing in front of everyone. The prompt therefore tells it to decline
-rather than settle, and only the top few Tenor results are ever considered,
-because relevance past that is worse than silence.
+The model sees **numbered tags and never URLs** - a URL in a prompt is a URL it
+can paste directly, bypassing every budget and cooldown. An out-of-range pick
+posts nothing; there is deliberately no nearest-match fallback, because a GIF
+nobody chose is the exact failure this avoids.
 
-`GIF_CONTENT_FILTER` defaults to `medium`, not `off`. The character is crude by
-design; Tenor's content is not the character's, and an unexpectedly graphic
-result is somebody else's material appearing under his name in a friend's
-server. Do not loosen it to make a joke land.
+`gifs.md` is gitignored like `persona.md` and re-read on every use, so adding one
+needs no restart. Untagged entries are never offered, since tags are all the
+model gets.
 
-Never a generated picture and a GIF on the same message. That is two features
-being demonstrated rather than a person talking.
+Never a generated picture and a GIF on the same message.
 
 ## Helping is a different mode, and consults the psychology
 

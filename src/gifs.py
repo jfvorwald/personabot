@@ -1,119 +1,115 @@
-"""Finding a GIF, from Tenor, over plain REST.
+"""GIFs from a pool you curate, with no API behind it.
 
-`FUTURE.md` flagged this as the hardest of the link behaviours to do well, and
-the reason still holds: **a bad GIF is far more conspicuous than no GIF.** A
-reaction image that does not quite fit reads worse than saying nothing, because
-everyone can see exactly what was aimed for and missed. So this searches with
-terms the model chose deliberately rather than picking something adjacent, and
-declines rather than settling.
+This started as a Tenor client. Tenor's API stopped accepting new keys in
+January 2026 and began returning errors on 30 June, so that version was dead
+before it ever ran. Discord's own picker moved to Klipy, but that is a
+client-side integration and exposes nothing a bot can call.
 
-Optional, like image generation. With no TENOR_KEY set the whole path is inert
-and the bot behaves as it did before. Nothing here decides whether a GIF is a
-good idea; it takes search terms and returns a URL.
+The replacement turns out to be better suited to the actual problem. The hard
+part was never finding *a* GIF, it was that **a bad GIF is far more conspicuous
+than no GIF** - a reaction that nearly fits reads worse than words, because
+everyone can see what was aimed at and missed. Searching a public index is a
+gamble on that every single time. A pool somebody curated is not: every entry
+is one that already fits this channel, so the model is choosing between good
+options rather than hoping.
 
-Posting the URL is the whole delivery mechanism. Discord expands a Tenor link
-into a playing GIF by itself, which is also how the humans in the channel do
-it, so this produces the same artefact rather than an uploaded file that looks
-subtly different from everyone else's.
+The file is markdown, gitignored like `persona.md`, because a list of what a
+particular group finds funny is exactly as personal as the persona is.
+
+    # anything outside a list item is a comment and ignored
+
+    - https://media.tenor.com/xxxx/shrug.gif | shrug, dont care, whatever
+    - https://media.tenor.com/yyyy/facepalm.gif | facepalm, disbelief, idiot
+
+Tags after the pipe are what the model picks by. Everything else on the line is
+ignored, so notes to yourself are free.
 """
 
 from __future__ import annotations
 
 import logging
+import os
 import random
-import urllib.parse
+import re
 
-import aiohttp
+from paths import at_root
 
 log = logging.getLogger("personabot.gifs")
 
-ENDPOINT = "https://tenor.googleapis.com/v2/search"
+POOL_FILE = "gifs.md"
 
-# Asked for by name so the response carries the format actually wanted rather
-# than every format Tenor holds.
-MEDIA_FILTER = "gif,tinygif"
-
-# Tenor ranks by relevance, so the top handful are the plausible ones and
-# anything past that is a worse fit than saying nothing.
-CANDIDATES = 8
+# A list item, a URL, then optionally tags after a pipe.
+_ENTRY = re.compile(r"^\s*[-*]\s*(?P<url>https?://\S+)\s*(?:\|\s*(?P<tags>.*))?$")
 
 
-def available(key: str) -> bool:
-    return bool(key and key.strip())
+class Gif:
+    def __init__(self, url: str, tags: list[str]):
+        self.url = url
+        self.tags = tags
+
+    def __repr__(self) -> str:
+        return f"Gif({self.url!r}, {self.tags!r})"
 
 
-def _pick(payload: dict) -> str | None:
-    """A URL from the top of the results, chosen at random among them.
+def parse(text: str) -> list[Gif]:
+    """Read the pool. Anything that is not a list item with a URL is ignored.
 
-    Random among the best few rather than strictly first: the same search
-    returning the same GIF every time is a tell, and Tenor's ordering is stable.
+    Forgiving on purpose: this is a file a person maintains by pasting links
+    into it, and a malformed line should cost that line rather than the pool.
     """
-    results = payload.get("results") or []
-    urls = []
-    for result in results:
-        formats = result.get("media_formats") or {}
-        for key in ("gif", "tinygif", "mediumgif"):
-            url = (formats.get(key) or {}).get("url")
-            if url:
-                urls.append(url)
-                break
-    if not urls:
-        return None
-    return random.choice(urls[:CANDIDATES])
-
-
-async def find(
-    terms: str,
-    *,
-    key: str,
-    content_filter: str = "medium",
-    timeout: float = 10.0,
-) -> str | None:
-    """Search for a GIF, or return None if anything at all goes wrong.
-
-    content_filter defaults to medium rather than off. The persona is crude by
-    design, but Tenor's content is not the persona's - an unexpectedly graphic
-    result is somebody else's material appearing under Jaq's name in a friend's
-    server, which is a different problem from Jaq being rude.
-    """
-    if not available(key) or not terms.strip():
-        return None
-
-    params = {
-        "key": key,
-        "q": terms.strip()[:200],
-        "client_key": "personabot",
-        "limit": str(CANDIDATES * 2),
-        "media_filter": MEDIA_FILTER,
-        "contentfilter": content_filter,
-        "country": "US",
-        "locale": "en_US",
-    }
-    url = f"{ENDPOINT}?{urllib.parse.urlencode(params)}"
-    log.info("Searching Tenor for %r", terms.strip()[:120])
-
-    try:
-        async with aiohttp.ClientSession(
-            timeout=aiohttp.ClientTimeout(total=timeout)
-        ) as session:
-            async with session.get(url) as response:
-                if response.status != 200:
-                    # Logged whole rather than sliced: a 403 for a bad key and a
-                    # 429 for a spent quota need different fixes, and truncating
-                    # the body once already cost an evening on the image path.
-                    detail = " ".join((await response.text()).split())
-                    log.error(
-                        "Tenor returned HTTP %s: %s", response.status, detail[:1000]
-                    )
-                    return None
-                payload = await response.json()
-    except Exception:
-        log.warning("Tenor search failed to complete", exc_info=True)
-        return None
-
-    found = _pick(payload)
-    if found is None:
-        log.info("Nothing usable came back for %r", terms.strip()[:80])
-    else:
-        log.info("Found a GIF: %s", found)
+    found = []
+    for line in (text or "").splitlines():
+        match = _ENTRY.match(line)
+        if not match:
+            continue
+        raw = match.group("tags") or ""
+        tags = [t.strip().lower() for t in raw.split(",") if t.strip()]
+        found.append(Gif(match.group("url").strip(), tags))
     return found
+
+
+def load() -> list[Gif]:
+    """The pool, read fresh so adding a GIF needs no restart."""
+    try:
+        with open(at_root(POOL_FILE), encoding="utf-8") as f:
+            return parse(f.read())
+    except OSError:
+        return []
+
+
+def available() -> bool:
+    return bool(load())
+
+
+def catalogue(pool: list[Gif], limit: int = 60) -> str:
+    """The menu shown to the model: numbered tags, never URLs.
+
+    Numbers rather than links because a URL in the prompt is a URL the model
+    can paste into a message directly, bypassing every budget and cooldown -
+    and because tags are what a choice should be made on anyway.
+    """
+    lines = []
+    for i, gif in enumerate(pool[:limit], start=1):
+        if gif.tags:
+            lines.append(f"{i}. {', '.join(gif.tags)}")
+    return "\n".join(lines)
+
+
+def choose(pool: list[Gif], number: int) -> Gif | None:
+    """Resolve the model's pick. Out of range is a miss, not a fallback.
+
+    Deliberately not "closest match" or "first one": a GIF nobody chose is the
+    approximate reaction this whole feature exists to avoid.
+    """
+    if number < 1 or number > len(pool):
+        return None
+    return pool[number - 1]
+
+
+def by_tag(pool: list[Gif], term: str) -> Gif | None:
+    """Any GIF carrying a tag, at random among those that do."""
+    term = term.strip().lower()
+    if not term:
+        return None
+    matches = [g for g in pool if any(term == t for t in g.tags)]
+    return random.choice(matches) if matches else None

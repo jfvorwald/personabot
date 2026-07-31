@@ -242,22 +242,18 @@ HELP_SEARCH_MAX = int(os.getenv("HELP_SEARCH_MAX", "4"))
 # wrong budget for explaining why something is broken.
 HELP_MAX_TOKENS = int(os.getenv("HELP_MAX_TOKENS", "2000"))
 
-# GIFs. A large share of how this group actually communicates is Tenor links
-# with no comment attached, and the bot only ever produced prose. Optional: with
-# no TENOR_KEY the path is inert.
+# GIFs, from a pool you curate rather than a search API. Tenor stopped issuing
+# keys in January 2026 and began erroring in June; Discord's picker moved to
+# Klipy, which is client-side and not callable by a bot.
 #
-# Rare on purpose, and for a different reason than pictures. A picture that
-# misses is a bot being odd; a reaction GIF that misses is a bot visibly aiming
-# at a joke and not landing it, which is worse.
+# The pool turns out to fit the problem better anyway. A bad GIF is far more
+# conspicuous than no GIF, and searching a public index gambles on that every
+# time. Every entry in gifs.md is one that already fits this channel, so the
+# choice is between good options rather than a hope.
 GIF_ENABLED = os.getenv("GIF_ENABLED", "true").lower() == "true"
-TENOR_KEY = os.getenv("TENOR_KEY", "")
 GIF_BASE_RATE = float(os.getenv("GIF_BASE_RATE", "0.18"))
 GIF_PER_PERSON_MAX = int(os.getenv("GIF_PER_PERSON_MAX", "6"))
 GIF_COOLDOWN_SECONDS = float(os.getenv("GIF_COOLDOWN_SECONDS", "300"))
-# Tenor's own filter, not the persona's. The character is crude by design;
-# an unexpectedly graphic search result is somebody else's material appearing
-# under his name, which is a different problem. off | low | medium | high.
-GIF_CONTENT_FILTER = os.getenv("GIF_CONTENT_FILTER", "medium")
 
 # Names the bot answers to, beyond a real @mention. Deliberately does NOT
 # include a bare "jaq": the persona is called Jaq and so is its creator, so a

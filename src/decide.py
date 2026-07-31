@@ -504,19 +504,27 @@ _GIF_DIRECTIVE = re.compile(r"<<\s*gif\s*:\s*(.*?)\s*>>", re.IGNORECASE | re.DOT
 _GIF_TRUNCATED = re.compile(r"<<\s*gif\s*:.*$", re.IGNORECASE | re.DOTALL)
 
 
-def extract_gif_terms(text: str) -> tuple[str, str]:
-    """Split a reply into what posts and what to search Tenor for.
+def extract_gif_terms(text: str) -> tuple[str, int]:
+    """Split a reply into what posts and which GIF from the pool was picked.
+
+    A number rather than search terms: the pool is curated, so choosing is
+    picking from a list rather than gambling on an index.
 
     Stripped on every reply rather than only offered ones, for the third time
     on the same principle: a model that has seen a syntax reproduces it, and
     the directive appearing in the channel shows the wiring to everyone.
     """
     if not text or "<<" not in text:
-        return text.strip(), ""
+        return text.strip(), 0
     found = _GIF_DIRECTIVE.findall(text)
     cleaned = _GIF_TRUNCATED.sub("", _GIF_DIRECTIVE.sub("", text))
-    terms = next((f.strip() for f in found if f.strip()), "")
-    return "\n".join(line.rstrip() for line in cleaned.splitlines()).strip(), terms
+    picked = 0
+    for candidate in found:
+        digits = re.sub(r"[^0-9]", "", candidate)
+        if digits:
+            picked = int(digits)
+            break
+    return "\n".join(line.rstrip() for line in cleaned.splitlines()).strip(), picked
 
 
 def image_blocked(
