@@ -408,3 +408,50 @@ def test_shutdown_is_idempotent(persona_bot, bot_module, monkeypatch):
 
     asyncio.run(scenario())
     assert closed == [True]
+
+
+# --- the quiet threshold is drawn, not fixed --------------------------------
+#
+# At a fixed one hour, every opener in a day landed between 1.0h and 1.3h of
+# quiet. That is a countable tell, and the same one the join delay and the
+# daily budget are drawn from ranges to avoid.
+
+
+def test_the_threshold_lands_inside_the_range(persona_bot, bot_module, monkeypatch):
+    monkeypatch.setattr(bot_module, "IDLE_HOURS_MIN", 1.0)
+    monkeypatch.setattr(bot_module, "IDLE_HOURS_MAX", 2.0)
+    seen = set()
+    for _ in range(200):
+        persona_bot._draw_idle_target()
+        assert 1.0 <= persona_bot._idle_target <= 2.0
+        seen.add(round(persona_bot._idle_target, 2))
+    assert len(seen) > 50, "a range that always returns the same number is a fixed number"
+
+
+def test_a_reversed_range_still_works(persona_bot, bot_module, monkeypatch):
+    """Someone will put the larger number first."""
+    monkeypatch.setattr(bot_module, "IDLE_HOURS_MIN", 4.0)
+    monkeypatch.setattr(bot_module, "IDLE_HOURS_MAX", 2.0)
+    persona_bot._draw_idle_target()
+    assert 2.0 <= persona_bot._idle_target <= 4.0
+
+
+def test_min_equal_to_max_is_a_fixed_threshold(persona_bot, bot_module, monkeypatch):
+    """Setting both the same is how you turn the randomness off."""
+    monkeypatch.setattr(bot_module, "IDLE_HOURS_MIN", 3.0)
+    monkeypatch.setattr(bot_module, "IDLE_HOURS_MAX", 3.0)
+    persona_bot._draw_idle_target()
+    assert persona_bot._idle_target == 3.0
+
+
+def test_a_new_day_draws_a_fresh_threshold(persona_bot, bot_module, monkeypatch):
+    import datetime
+
+    monkeypatch.setattr(bot_module, "LIVE_UNLIMITED", True)
+    monkeypatch.setattr(bot_module, "IDLE_HOURS_MIN", 1.0)
+    monkeypatch.setattr(bot_module, "IDLE_HOURS_MAX", 2.0)
+    persona_bot._save_day = lambda: None
+    persona_bot._schedule_pokes = lambda today: None
+    persona_bot._idle_target = 0.0
+    persona_bot._roll_day(datetime.date(2026, 7, 31))
+    assert persona_bot._idle_target > 0

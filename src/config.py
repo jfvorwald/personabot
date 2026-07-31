@@ -87,7 +87,17 @@ LIVE_COUNTERPARTS = [
 # Unprompted conversation starters. Every IDLE_CHECK_MINUTES the bot looks at
 # how quiet the channel has been; past IDLE_HOURS it may open a new thread of
 # its own, subject to IDLE_CHANCE and the same daily budget.
-IDLE_HOURS = float(os.getenv("IDLE_HOURS", "5"))
+# How long the channel must be quiet before an opener is eligible, drawn fresh
+# each time from this range rather than fixed. A fixed threshold is a countable
+# tell: at one hour flat every opener landed between 1.0h and 1.3h of quiet,
+# which anyone watching could set a watch by. Same reason the daily budget and
+# the join delay are drawn from ranges rather than pinned.
+#
+# The draw is held until an opener actually fires. Re-drawing on every check
+# would collapse the effective threshold to the minimum, because eventually a
+# low number comes up.
+IDLE_HOURS_MIN = float(os.getenv("IDLE_HOURS_MIN", "1"))
+IDLE_HOURS_MAX = float(os.getenv("IDLE_HOURS_MAX", "2"))
 IDLE_CHECK_MINUTES = float(os.getenv("IDLE_CHECK_MINUTES", "30"))
 IDLE_CHANCE = float(os.getenv("IDLE_CHANCE", "0.4"))
 # Openers draw on their own budget rather than the day's replies, the same way

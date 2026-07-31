@@ -137,6 +137,8 @@ class PersonaBot(discord.Client):
         self.idle_opener = tasks.loop(minutes=IDLE_CHECK_MINUTES)(self._idle_tick)
         self.poke_ben = tasks.loop(minutes=1)(self._poke_tick)
         self._poke_times: list = []
+        # Redrawn after every opener; see _draw_idle_target.
+        self._idle_target = 0.0
 
         self._replies_today = 0
         # Per-person spend for today, keyed by Discord user id as a string
@@ -268,6 +270,18 @@ class PersonaBot(discord.Client):
             return None
         return raw
 
+    def _draw_idle_target(self) -> None:
+        """Pick how long the room has to be quiet before the next opener.
+
+        Fresh each time, and held until one fires. A fixed threshold made every
+        opener land in the same narrow band after the room went quiet, which is
+        exactly the countable tell the join delay and the daily budget are
+        drawn randomly to avoid.
+        """
+        low, high = min(IDLE_HOURS_MIN, IDLE_HOURS_MAX), max(IDLE_HOURS_MIN, IDLE_HOURS_MAX)
+        self._idle_target = random.uniform(low, high)
+        log.info("Next opener after %.1fh of quiet", self._idle_target)
+
     def _reset_hang_back(self) -> None:
         """Draw a fresh number of messages to sit out before joining in."""
         self._messages_waited = 0
@@ -365,6 +379,7 @@ class PersonaBot(discord.Client):
         self._polls_today = 0
         self._openers_today = 0
         self._unanswered_openers = 0
+        self._draw_idle_target()
         self._images_today = 0
         self._images_by_person = {}
         self._gifs_by_person = {}
@@ -574,10 +589,11 @@ class PersonaBot(discord.Client):
             if not self.idle_opener.is_running():
                 self.idle_opener.start()
                 log.info(
-                    "Idle openers: checking every %gmin, after %gh quiet, "
+                    "Idle openers: checking every %gmin, after %g-%gh quiet, "
                     "%.0f%% chance, max %s/day, %d unanswered in a row",
                     IDLE_CHECK_MINUTES,
-                    IDLE_HOURS,
+                    IDLE_HOURS_MIN,
+                    IDLE_HOURS_MAX,
                     IDLE_CHANCE * 100,
                     IDLE_DAILY_MAX or "∞",
                     IDLE_MAX_UNANSWERED,
@@ -1833,8 +1849,10 @@ class PersonaBot(discord.Client):
 
         now = discord.utils.utcnow()
         if last is not None:
+            if not self._idle_target:
+                self._draw_idle_target()
             quiet_hours = (now - last.created_at).total_seconds() / 3600
-            if quiet_hours < IDLE_HOURS:
+            if quiet_hours < self._idle_target:
                 return
         else:
             quiet_hours = float("inf")
@@ -1865,6 +1883,9 @@ class PersonaBot(discord.Client):
                 await channel.send(line[:MAX_DISCORD_CHARS])
                 self._openers_today += 1
                 self._unanswered_openers += 1
+                # A new number for the next one, so two openers in a row are
+                # never the same distance apart.
+                self._draw_idle_target()
                 self._observe("opener", quiet_hours=round(quiet_hours, 1), chars=len(line))
                 log.info(
                     "Opened a thread (%d/%s openers today, %d unanswered)",
