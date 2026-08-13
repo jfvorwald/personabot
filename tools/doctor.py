@@ -225,6 +225,63 @@ async def check_5_images() -> bool:
     return ok("render", f"{model}, {len(data) // 1024} KB")
 
 
+def check_6_personnel() -> bool:
+    """External context, and whether its manifest agrees with the brain.
+
+    Never fails the run. Nothing here can stop the bot replying, so nothing
+    here should stop the doctor either - but two independent maps from Discord
+    id to person now exist, `personnel/general/people.yml` and
+    `brain/_index.json`, and the failure mode when they disagree is silent.
+    An id in the manifest that the brain calls somebody else is how one
+    person's notes end up filed under another person's name, and that is worth
+    a line on screen well before it is worth a bug report.
+    """
+    print("\n[6] External context (optional)")
+    import personnel
+
+    active = personnel.provider()
+    if isinstance(active, personnel.NullProvider):
+        return ok("source", "none configured (JAQ_PERSONNEL_PATH, JAQ_CONTEXT_PATH)")
+    ok("source", personnel.describe())
+
+    if not isinstance(active, personnel.PersonnelProvider):
+        return True
+
+    manifest = active._manifest()
+    if not manifest:
+        return ok("manifest", "no people mapped yet")
+
+    missing = [
+        slug for slug in sorted(set(manifest.values()))
+        if not os.path.isdir(os.path.join(active.root, "people", slug))
+    ]
+    ok("manifest", f"{len(manifest)} mapped, {len(set(manifest.values()))} slugs")
+    if missing:
+        print(f"        WARN  mapped with no directory: {', '.join(missing)}")
+
+    try:
+        import brain
+
+        index = brain.load_index().get("people", {})
+    except Exception as e:
+        print(f"        WARN  could not read the brain index ({type(e).__name__})")
+        return True
+
+    disagreed = [
+        f"{uid} (personnel={slug}, brain={index[uid].get('handle')})"
+        for uid, slug in sorted(manifest.items())
+        if uid in index and index[uid].get("handle") != slug
+    ]
+    unknown = [uid for uid in sorted(manifest) if uid not in index]
+    if disagreed:
+        print(f"        WARN  slug disagrees with the brain: {'; '.join(disagreed)}")
+    if unknown:
+        print(f"        WARN  ids the brain has never seen: {', '.join(unknown)}")
+    if not disagreed and not unknown:
+        ok("agrees with brain/_index.json")
+    return True
+
+
 async def main() -> int:
     print("personabot doctor")
     if not check_1_config():
@@ -235,6 +292,7 @@ async def main() -> int:
         return 1
     if not await check_5_images():
         return 1
+    check_6_personnel()
     print("\nAll checks passed. Run:  .venv/bin/python src/bot.py --now")
     return 0
 

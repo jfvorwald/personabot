@@ -46,6 +46,7 @@ import gifs
 import guard
 import imagegen
 import improve
+import personnel
 import react
 import vision
 from decide import fold
@@ -568,6 +569,7 @@ class PersonaBot(discord.Client):
                 if BRAIN_ENABLED
                 else "off",
             )
+            log.info("Personnel: %s.", personnel.describe())
             log.info(
                 "Pictures: %s",
                 f"{GEMINI_IMAGE_MODEL}, offered on {IMAGE_BASE_RATE:.0%} of "
@@ -1195,6 +1197,13 @@ class PersonaBot(discord.Client):
                 notes = ""
             if notes:
                 system = f"{system}\n\n---\n\n{notes}"
+        try:
+            outside = personnel.load_for(speakers or set())
+        except Exception:
+            log.exception("Personnel failed to load; carrying on without it")
+            outside = ""
+        if outside:
+            system = f"{system}\n\n---\n\n{outside}"
 
         tools = []
         if HELP_SEARCH:
@@ -2154,6 +2163,16 @@ class PersonaBot(discord.Client):
                 notes = ""
             if notes:
                 system = f"{system}\n\n---\n\n{notes}"
+        # Same place as the brain, on purpose. Both are per-person material and
+        # a second injection point is a second thing to remember when the
+        # privacy rules change.
+        try:
+            outside = personnel.load_for(speakers or set())
+        except Exception:
+            log.exception("Personnel failed to load; carrying on without it")
+            outside = ""
+        if outside:
+            system = f"{system}\n\n---\n\n{outside}"
         if instruction:
             user = (
                 "Here is the recent conversation in the channel:\n\n"

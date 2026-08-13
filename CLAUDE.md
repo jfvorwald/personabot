@@ -207,6 +207,54 @@ are tracked; every other file there is gitignored, like `persona.md`, because
 they describe a specific group's in-jokes. Two gates on purpose: a context that
 fires every time it matches gives the channel a house style nobody chose.
 
+## What Jaq knows about people lives outside this repo
+
+`src/personnel.py` reads context from somewhere that is not here, because this
+repo is public and the notes are not. Two sources, resolved once at import:
+`JAQ_PERSONNEL_PATH` (a checkout of the private `personnel` repo, with
+`general/` plus `people/<slug>/` and a `general/people.yml` mapping Discord ids
+to slugs) wins over `JAQ_CONTEXT_PATH` (a plain file or flat directory, for
+anyone running their own bot), and neither being set is the state the bot
+shipped in rather than an error.
+
+**Adding a person is a directory and a manifest line.** Nothing to register,
+files read fresh on every reply, no restart. Same contract as the picture
+contexts and for the same reason: the person who knows what to write about
+somebody is not necessarily editing Python.
+
+**It goes in where the brain goes in, and nowhere else.** `personnel.load_for`
+sits directly after `brain.load_for` at both call sites, in the same
+try/except. Both are per-person material, and a second injection point is a
+second thing to update the day the privacy rules change. It is deliberately
+absent from `_generate_direct`, which builds from scratch and is owner-only.
+
+**A person's notes load whenever that person is speaking, including in a
+channel with other people present.** That is a deliberate choice and it is the
+widest of the options. `PERSONNEL_HEADER` is what stands between those notes
+and the room, so it is written harder than `BRAIN_HEADER`: never recite, never
+allude, never repeat a detail back to the person it is about, and nothing about
+someone who is not currently talking. It is still a prompt. `REDACT_TERMS` is
+the layer that holds when the prompt does not.
+
+**There are now two id-to-person maps** - `personnel/general/people.yml` and
+`brain/_index.json` - and when they disagree one person's notes get filed under
+another person's name. `tools/doctor.py` check 6 reports disagreements and ids
+the brain has never seen. Do not let them drift silently, and think hard before
+adding a third.
+
+Slugs are validated against `^[a-z0-9][a-z0-9-]*$` before being joined to a
+path, because a hand-edited manifest line reading `../../.ssh` must resolve to
+nothing rather than to somewhere. `readme.md` and `example.md` are skipped
+everywhere, so a freshly scaffolded checkout is inert instead of narrating its
+own directory structure into the prompt.
+
+**Full injection is a decision with an expiry date.** Everything fits today, so
+everything goes in, bounded by `CONTEXT_MAX_CHARS` and spent general-first so a
+crowded channel cannot push the shared history out. When it stops fitting, the
+thing to replace is `_documents(scope)`, which is the only place that decides
+what is worth reading; the resolution order, the budget and the caller all
+survive that change untouched.
+
 ## OBEY is one account, one word, no argument
 
 Jack shouting `OBEY` in a message is an order. It bypasses the reply roll, the

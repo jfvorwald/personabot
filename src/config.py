@@ -127,6 +127,18 @@ JOIN_WINDOW_MESSAGES = int(os.getenv("JOIN_WINDOW_MESSAGES", "8"))
 # the next scan has a to-do list. See brain/README.md.
 BRAIN_ENABLED = os.getenv("BRAIN_ENABLED", "true").lower() == "true"
 
+# Context about real people, kept outside this repo because this repo is
+# public. A checkout of `personnel` if you have one - general/ plus
+# people/<slug>/ resolved through general/people.yml - otherwise a plain
+# markdown file or flat directory anyone can supply. Neither set is fine and
+# is what the bot did before either existed. See src/personnel.py.
+JAQ_PERSONNEL_PATH = os.getenv("JAQ_PERSONNEL_PATH", "").strip()
+JAQ_CONTEXT_PATH = os.getenv("JAQ_CONTEXT_PATH", "").strip()
+# Ceiling on the whole external-context block, spent general-first. Everything
+# fits today; this is here so that stops being load-bearing the day it doesn't,
+# rather than discovering the limit as a failed reply.
+CONTEXT_MAX_CHARS = int(os.getenv("CONTEXT_MAX_CHARS", "24000"))
+
 # How far back patch notes look. Someone asking "any updates?" means today,
 # not this quarter.
 PATCH_NOTES_HOURS = int(os.getenv("PATCH_NOTES_HOURS", "24"))

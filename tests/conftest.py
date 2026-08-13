@@ -29,6 +29,11 @@ os.environ.update(
         "ALLIES": "real jaq,jaqsup",
         "LIVE_COUNTERPARTS": "agentic ben,agenticben",
         "BRAIN_ENABLED": "false",
+        # Set empty so the real .env cannot point the suite at a real
+        # personnel checkout. dotenv leaves an already-set key alone, and
+        # config strips these, so "" reads as unset.
+        "JAQ_PERSONNEL_PATH": "",
+        "JAQ_CONTEXT_PATH": "",
     }
 )
 
