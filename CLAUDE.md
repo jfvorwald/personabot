@@ -210,7 +210,8 @@ fires every time it matches gives the channel a house style nobody chose.
 ## What Jaq knows about people lives outside this repo
 
 `src/personnel.py` reads context from somewhere that is not here, because this
-repo is public and the notes are not. Two sources, resolved once at import:
+repo is written as though public and the notes cannot be. Two sources, resolved
+once at import:
 `JAQ_PERSONNEL_PATH` (a checkout of the private `personnel` repo, with
 `general/` plus `people/<slug>/` and a `general/people.yml` mapping Discord ids
 to slugs) wins over `JAQ_CONTEXT_PATH` (a plain file or flat directory, for
@@ -221,6 +222,24 @@ shipped in rather than an error.
 files read fresh on every reply, no restart. Same contract as the picture
 contexts and for the same reason: the person who knows what to write about
 somebody is not necessarily editing Python.
+
+**The brain and personnel split by how the knowledge was got, not by subject.**
+Both load, both are per-person, and neither is being retired. The brain is
+generated: `brain.py scan` reads the channel and rewrites it, so it holds what
+can be observed - who they are, how they type, running bits. personnel is
+hand-written and never overwritten: context the channel never shows, history
+with Jaq, Jack's stance, how to handle them. **If a scan could work it out, it
+does not belong in personnel.** Copying a brain profile across puts the same
+text in the prompt twice on every reply and over-weights that person.
+
+**A file with only headings in it does not load.** `_is_blank_form` treats a
+document with no prose under any heading as absent, so a directory can be
+pre-created for every person without any of them costing prompt space. One
+sentence anywhere in the file makes it real. This is the same instinct as
+skipping `readme.md`: scaffolding should do nothing rather than something
+wrong, and the guidance a template carries is addressed to the author, who is
+not the model. Authoring guidance therefore lives in `personnel/people/
+README.md`, which is never loaded, not in the per-person files.
 
 **It goes in where the brain goes in, and nowhere else.** `personnel.load_for`
 sits directly after `brain.load_for` at both call sites, in the same
@@ -426,8 +445,16 @@ the most recognisable machine tell there is.
 ## Never commit
 
 `.env`, `persona.md`, `brain/people/`, and `brain/_index.json` are gitignored
-and must stay that way. They hold API keys and notes about real people, and
-this repo is public. Check `git diff --cached --name-only` before committing.
+and must stay that way. They hold API keys and notes about real people. Check
+`git diff --cached --name-only` before committing.
+
+**This repo is private as of 2026-08-13, and that is not the reason to relax
+any of it.** It was written throughout as though public, and it stays written
+that way: visibility is a setting somebody can change in two clicks, git
+history is permanent, and the gap between those two facts is the whole risk.
+Treat every commit here as publishable at the moment you make it. Anything that
+would be a problem if this flipped public tomorrow belongs in `personnel`
+instead, which is private and intended to stay that way.
 
 ## The privacy rule
 

@@ -63,6 +63,27 @@ _SLUG = re.compile(r"^[a-z0-9][a-z0-9-]*$")
 _ENTRY = re.compile(r"""^\s*["']?(\d+)["']?\s*:\s*["']?([^"'#\s]+)["']?\s*(?:#.*)?$""")
 
 
+def _is_blank_form(text: str) -> bool:
+    """Headings and nothing under them. A form nobody has filled in yet.
+
+    Pre-creating a file per person is the useful thing to do - it is what makes
+    sitting down to write easy - but an empty one is not context, and a prompt
+    told "## Stance" with nothing beneath it has been handed a blank where it
+    expected knowledge. Worse, whatever guidance the template carries for the
+    author is addressed to the author, and the model is not the author.
+
+    So the file becomes real the moment there is a sentence in it, and until
+    then it is treated as absent. Same instinct as skipping readme.md: the
+    scaffolding should do nothing rather than something wrong.
+    """
+    for line in text.splitlines():
+        stripped = line.strip()
+        if not stripped or stripped.startswith("#") or set(stripped) <= {"-", "*", "="}:
+            continue
+        return False
+    return True
+
+
 def _read(path: str) -> str | None:
     """A file's text, or None. Never raises - unreadable is a kind of absent."""
     try:
@@ -169,7 +190,7 @@ class MarkdownProvider:
             if not os.path.isfile(full):
                 continue
             text = _read(full)
-            if text:
+            if text and not _is_blank_form(text):
                 docs.append((full, text))
         return docs
 
@@ -251,7 +272,7 @@ class PersonnelProvider:
             if name == MANIFEST or name in NOT_CONTENT:
                 continue
             text = _read(path)
-            if text:
+            if text and not _is_blank_form(text):
                 docs.append((path, text))
         return docs
 

@@ -174,6 +174,37 @@ def test_scaffold_only_checkout_injects_nothing(tmp_path):
     assert p.resolve(123) is None
 
 
+BLANK_FORM = "# Someone\n\n## Context\n\n## History with Jaq\n\n## Stance\n\n## Handling\n"
+
+
+def test_a_form_nobody_filled_in_does_not_load(tmp_path):
+    """Pre-creating a file per person must cost nothing until it says something."""
+    root = build(tmp_path, people={"someone": {"notes.md": BLANK_FORM}})
+    assert PersonnelProvider(root).load_context("someone", BIG) is None
+
+
+def test_one_sentence_makes_the_form_real(tmp_path):
+    filled = BLANK_FORM.replace("## Stance\n", "## Stance\n\nJaq finds them tolerable.\n")
+    root = build(tmp_path, people={"someone": {"notes.md": filled}})
+    text = PersonnelProvider(root).load_context("someone", BIG)
+    assert text is not None and "tolerable" in text
+
+
+def test_blank_form_does_not_hide_a_filled_sibling(tmp_path):
+    root = build(
+        tmp_path,
+        people={"someone": {"empty.md": BLANK_FORM, "real.md": "# X\n\nsomething true\n"}},
+    )
+    text = PersonnelProvider(root).load_context("someone", BIG)
+    assert "something true" in text
+    assert "## Handling" not in text
+
+
+def test_horizontal_rules_and_bullets_alone_are_still_blank(tmp_path):
+    root = build(tmp_path, general={"a.md": "# T\n\n---\n\n## S\n\n-\n\n***\n"})
+    assert PersonnelProvider(root).load_context("general", BIG) is None
+
+
 def test_markdown_fallback_also_skips_readme(tmp_path):
     d = tmp_path / "ctx"
     d.mkdir()

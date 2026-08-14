@@ -251,13 +251,14 @@ def check_6_personnel() -> bool:
     if not manifest:
         return ok("manifest", "no people mapped yet")
 
-    missing = [
-        slug for slug in sorted(set(manifest.values()))
-        if not os.path.isdir(os.path.join(active.root, "people", slug))
-    ]
-    ok("manifest", f"{len(manifest)} mapped, {len(set(manifest.values()))} slugs")
-    if missing:
-        print(f"        WARN  mapped with no directory: {', '.join(missing)}")
+    slugs = set(manifest.values())
+    # A mapped slug with no directory is the designed resting state, not a
+    # fault: mapping everyone up front is what makes adding notes a mkdir
+    # rather than a manifest edit. Counted, not warned about.
+    written = sum(
+        1 for s in slugs if os.path.isdir(os.path.join(active.root, "people", s))
+    )
+    ok("manifest", f"{len(manifest)} mapped, {written} with a directory")
 
     try:
         import brain
