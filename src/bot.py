@@ -280,8 +280,22 @@ class PersonaBot(discord.Client):
         drawn randomly to avoid.
         """
         low, high = min(IDLE_HOURS_MIN, IDLE_HOURS_MAX), max(IDLE_HOURS_MIN, IDLE_HOURS_MAX)
-        self._idle_target = random.uniform(low, high)
-        log.info("Next opener after %.1fh of quiet", self._idle_target)
+        base = random.uniform(low, high)
+        # Every opener nobody answered makes the next one wait longer. Without
+        # this the threshold is flat, so a room that has gone quiet for good
+        # gets asked again on the same schedule as one that just paused - and
+        # the only thing stopping it is the unanswered cap, which a counterpart
+        # bot replying is enough to clear.
+        self._idle_target = base * (IDLE_BACKOFF ** self._unanswered_openers)
+        if self._unanswered_openers:
+            log.info(
+                "Next opener after %.1fh of quiet (%.1fh, backed off for %d unanswered)",
+                self._idle_target,
+                base,
+                self._unanswered_openers,
+            )
+        else:
+            log.info("Next opener after %.1fh of quiet", self._idle_target)
 
     def _reset_hang_back(self) -> None:
         """Draw a fresh number of messages to sit out before joining in."""
@@ -590,15 +604,23 @@ class PersonaBot(discord.Client):
                 self.poke_ben.start()
             if not self.idle_opener.is_running():
                 self.idle_opener.start()
+                window = (
+                    "any hour"
+                    if IDLE_WINDOW_START == IDLE_WINDOW_END
+                    else f"{IDLE_WINDOW_START:02d}:00-{IDLE_WINDOW_END:02d}:00 {TIMEZONE.key}"
+                )
                 log.info(
-                    "Idle openers: checking every %gmin, after %g-%gh quiet, "
-                    "%.0f%% chance, max %s/day, %d unanswered in a row",
+                    "Idle openers: %s, checking every %gmin, after %g-%gh quiet, "
+                    "%.0f%% chance, max %s/day, %d unanswered in a row, "
+                    "backing off %gx each",
+                    window,
                     IDLE_CHECK_MINUTES,
                     IDLE_HOURS_MIN,
                     IDLE_HOURS_MAX,
                     IDLE_CHANCE * 100,
                     IDLE_DAILY_MAX or "∞",
                     IDLE_MAX_UNANSWERED,
+                    IDLE_BACKOFF,
                 )
             return
         if not self.scheduled_post.is_running():
@@ -1841,20 +1863,30 @@ class PersonaBot(discord.Client):
         """Occasionally start a conversation when the channel has gone quiet."""
         if self._busy.locked():
             return
+        # Checked before the channel fetch, because outside the window the
+        # answer is no regardless of what is in it.
+        now_local = discord.utils.utcnow().astimezone(TIMEZONE)
+        if not decide.within_hours(now_local.hour, IDLE_WINDOW_START, IDLE_WINDOW_END):
+            return
         channel = self.get_channel(CHANNEL_ID) or await self.fetch_channel(CHANNEL_ID)
 
         last = None
         async for msg in channel.history(limit=1):
             last = msg
-        # Speaking into the void is allowed, but not indefinitely. A person who
-        # has gone unanswered twice stops; the old rule stopped after one,
-        # which meant a channel quiet overnight got a single opener and then
-        # silence no matter how long it stayed quiet.
-        if last is not None and last.author.id == self.user.id:
+        # Speaking into the void is allowed, but not indefinitely. Only a human
+        # counts as being answered: our own opener obviously is not one, and
+        # neither is the counterpart bot replying to it - two bots keeping each
+        # other's counters at zero is how three openers once landed between
+        # midnight and 4am. An empty channel counts as unanswered too, which
+        # still lets the first opener through because the count starts at zero.
+        if last is None or last.author.bot:
             if self._unanswered_openers >= IDLE_MAX_UNANSWERED:
                 return
-        else:
+        elif self._unanswered_openers:
+            # The room woke up. Drop the backed-off threshold with the count,
+            # or the next quiet spell is judged by how dead the last one was.
             self._unanswered_openers = 0
+            self._draw_idle_target()
 
         now = discord.utils.utcnow()
         if last is not None:

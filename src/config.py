@@ -110,6 +110,21 @@ IDLE_DAILY_MAX = int(os.getenv("IDLE_DAILY_MAX", "6"))
 # which in a channel that has gone quiet overnight means one opener and then
 # nothing. Two is a person trying twice; ten is a person talking to a wall.
 IDLE_MAX_UNANSWERED = int(os.getenv("IDLE_MAX_UNANSWERED", "2"))
+# Waking hours for openers, local time in TIMEZONE, half-open [start, end).
+# An opener is triggered by quiet, and the quietest a channel ever gets is the
+# middle of the night - so a quiet-triggered rule finds 3am on its own, and it
+# did: 35 of the first 99 openers landed between 23:00 and 08:00, with the
+# busiest single hour being 1am. No threshold tuning fixes that, because the
+# threshold is measuring exactly the thing that makes 1am attractive. Someone
+# asleep does not start conversations, so the hours are stated outright.
+# Setting them equal means no window at all.
+IDLE_WINDOW_START = int(os.getenv("IDLE_WINDOW_START", "9"))
+IDLE_WINDOW_END = int(os.getenv("IDLE_WINDOW_END", "23"))
+# Multiplier on the quiet threshold for each opener nobody has answered. Two
+# unanswered openers at a flat threshold is a person asking the same empty room
+# every couple of hours; the wait should grow instead. Reset - and the target
+# redrawn - the moment a human speaks. 1.0 turns the backoff off.
+IDLE_BACKOFF = float(os.getenv("IDLE_BACKOFF", "2.0"))
 
 # Joining a conversation already in progress. Answering the first message of a
 # thread we aren't part of reads as surveillance, not company - a person who

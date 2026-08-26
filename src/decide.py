@@ -51,6 +51,20 @@ def name_matches(candidates: set[str], patterns: list[str]) -> bool:
     return any(fold(p) in name for p in patterns for name in folded)
 
 
+def within_hours(hour: int, start: int, end: int) -> bool:
+    """True if a local hour falls in the half-open window [start, end).
+
+    Wraps past midnight when start > end, so 22-6 means late evening through
+    early morning rather than nothing at all. start == end is the whole day:
+    a window nobody narrowed should not silently switch the feature off.
+    """
+    if start == end:
+        return True
+    if start < end:
+        return start <= hour < end
+    return hour >= start or hour < end
+
+
 def reply_chance(
     *,
     base: float,
