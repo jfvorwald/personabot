@@ -102,3 +102,36 @@ def test_no_bot_has_a_profile_on_disk():
     }
     bots = {v.get("handle") for v in index.values() if v.get("is_bot")}
     assert not (handles & bots), f"a bot has a profile: {sorted(handles & bots)}"
+
+
+# --- an unfilled block is not knowledge --------------------------------------
+
+
+def test_the_starter_placeholder_is_not_treated_as_written():
+    """write_profile stamps this on every new profile. It is addressed to
+    Jack, and it was reaching the prompt under a heading that promises Jaq's
+    read of somebody and then delivers a blank."""
+    placeholder = (
+        "## Jaq's read\n\n"
+        "_Nothing yet. Write how Jaq feels about them here - it survives "
+        "every future scan._"
+    )
+    assert brain._is_written(placeholder) is False
+
+
+def test_real_notes_are_treated_as_written():
+    assert brain._is_written("## Jaq's read\n\nHe is a menace and you like it.") is True
+
+
+def test_an_empty_block_is_not_written():
+    assert brain._is_written("") is False
+    assert brain._is_written("\n\n   \n") is False
+
+
+def test_headings_alone_are_not_written():
+    """Same rule the personnel loader applies to an unfilled notes file."""
+    assert brain._is_written("## Stance\n\n## Handling\n") is False
+
+
+def test_one_real_sentence_under_headings_is_enough():
+    assert brain._is_written("## Stance\n\nHe thinks you take orders.\n") is True

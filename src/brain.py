@@ -185,6 +185,24 @@ def read_profile(handle: str) -> tuple[str, str]:
     return body.strip(), ""
 
 
+def _is_written(handwritten: str) -> bool:
+    """Has anybody actually written in this block, or is it still the form?
+
+    write_profile stamps every new profile with a heading and a line telling
+    Jack where to write. That line is addressed to him, and it was going
+    straight into the prompt under a heading promising Jaq's read of somebody,
+    which is a blank where the model was told to expect knowledge. Same rule
+    the personnel loader already applies to an unfilled notes file, and the
+    same reasoning: scaffolding should do nothing rather than something wrong.
+    """
+    for line in handwritten.splitlines():
+        stripped = line.strip()
+        if not stripped or stripped.startswith("#") or stripped.startswith("_"):
+            continue
+        return True
+    return False
+
+
 def write_profile(handle: str, display: str, generated: str, handwritten: str) -> str:
     """Write a profile, keeping the hand-written tail exactly as it was."""
     os.makedirs(PEOPLE_DIR, exist_ok=True)
@@ -253,10 +271,12 @@ def load_for(user_ids: set[int]) -> str:
         if not handle or handle in seen_handles:
             return
         generated, handwritten = read_profile(handle)
+        handwritten = handwritten if _is_written(handwritten) else ""
         if not generated and not handwritten:
             return
         seen_handles.add(handle)
-        wanted.append((entry.get("display", handle), f"{generated}\n\n{handwritten}"))
+        body = f"{generated}\n\n{handwritten}".strip()
+        wanted.append((entry.get("display", handle), body))
 
     for entry in people.values():
         if entry.get("handle", "").lower() in BRAIN_CORE:
