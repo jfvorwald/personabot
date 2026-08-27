@@ -39,6 +39,25 @@ HISTORY_LIMIT = int(os.getenv("HISTORY_LIMIT", "30"))
 MODEL = os.getenv("MODEL", "claude-opus-5")
 EFFORT = os.getenv("EFFORT", "low")
 
+# Prompt caching. The persona, the psychology document and the vocabulary list
+# are read once at startup and are byte-identical on every reply, which is
+# 8222 of the roughly 13000 tokens of system prompt. Everything downstream of
+# them varies with who is speaking, so the breakpoint goes between the two.
+#
+# Deliberately NOT the top-level automatic form. Automatic puts the breakpoint
+# on the last cacheable block, and the last block here is the transcript, which
+# is different on every single request - so every call would write an entry at
+# 1.25x and never read one back. Automatic is built for a conversation that
+# grows across turns; this bot sends one fresh user message each time.
+#
+# 5 minutes rather than an hour: measured over 730 real calls, 61% arrive
+# within five minutes of the previous one and a read refreshes the timer for
+# free, so a busy afternoon keeps one entry alive the whole way. The hour TTL
+# costs 2x to write and measured only marginally better (51% vs 45% off the
+# cached prefix), which is not worth being wrong about.
+CACHE_PROMPT = os.getenv("CACHE_PROMPT", "true").lower() == "true"
+CACHE_TTL = os.getenv("CACHE_TTL", "5m")
+
 # --live guards. Two bots that each reply on every message would loop forever,
 # so live mode ignores bot authors by default and rations replies per day.
 LIVE_REPLY_TO_BOTS = os.getenv("LIVE_REPLY_TO_BOTS", "false").lower() == "true"

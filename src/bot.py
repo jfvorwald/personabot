@@ -117,6 +117,57 @@ def _with_images(text: str, images: list | None) -> str | list:
     return [*images, {"type": "text", "text": text}]
 
 
+def _system_blocks(stable: str, volatile: str) -> list[dict] | str:
+    """The system prompt, split so the stable half can be cached.
+
+    Returns the two halves as content blocks with a cache breakpoint on the
+    first, or the plain concatenated string when caching is off - so turning
+    the flag off returns the exact bytes the model saw before any of this
+    existed.
+
+    `volatile` carries its own leading separator, which is what makes the two
+    blocks concatenate to a byte-identical prompt. Splitting a string at a
+    join and dropping the join is how a "no functional change" refactor
+    quietly rewrites a prompt.
+    """
+    whole = f"{stable}{volatile}"
+    if not CACHE_PROMPT or not stable:
+        return whole
+    if not volatile:
+        return [{"type": "text", "text": stable,
+                 "cache_control": _cache_control()}]
+    return [
+        {"type": "text", "text": stable, "cache_control": _cache_control()},
+        {"type": "text", "text": volatile},
+    ]
+
+
+def _cache_control() -> dict:
+    control = {"type": "ephemeral"}
+    # Anything other than the default five minutes has to be stated. "5m" is
+    # the API default and passing it explicitly is not accepted everywhere.
+    if CACHE_TTL and CACHE_TTL != "5m":
+        control["ttl"] = CACHE_TTL
+    return control
+
+
+def _log_cache(usage) -> None:
+    """One line saying whether the cache actually worked.
+
+    The expensive failure here is silent: a later change to prompt assembly
+    stops the prefix matching, every request pays the write premium instead of
+    the read discount, nothing errors and nobody notices for months. These
+    three numbers are the only ground truth, so they get logged rather than
+    checked once at setup.
+    """
+    read = getattr(usage, "cache_read_input_tokens", 0) or 0
+    written = getattr(usage, "cache_creation_input_tokens", 0) or 0
+    if not (read or written):
+        return
+    log.info("Cache: %d read, %d written, %d fresh",
+             read, written, getattr(usage, "input_tokens", 0) or 0)
+
+
 class PersonaBot(discord.Client):
     def __init__(
         self,
@@ -1266,7 +1317,7 @@ class PersonaBot(discord.Client):
             except Exception:
                 notes = ""
             if notes:
-                system = f"{system}\n\n---\n\n{notes}"
+                volatile = f"{volatile}\n\n---\n\n{notes}"
         try:
             outside = personnel.load_for(speakers or set())
         except Exception:
@@ -2245,13 +2296,17 @@ class PersonaBot(discord.Client):
             framing += IMAGE_OPTION + self._image_context(transcript)
         elif refuse_image:
             framing += IMAGE_DECLINED
-        system = self.persona
+        # Split by how often it changes, not by what it means. Everything in
+        # `stable` is read once at startup and is byte-identical on every
+        # reply, so it is what the cache breakpoint sits behind. Everything
+        # after it moves with the situation: which options this reply was
+        # offered, and who is in the room.
+        stable = self.persona
         if self.psychology:
-            system = f"{system}\n\n---\n\n{self.psychology}"
+            stable = f"{stable}\n\n---\n\n{self.psychology}"
         if self.vocab:
-            system = f"{system}\n\n---\n\n{self.vocab}"
-        system = f"{system}\n\n---\n\n{framing}"
-        system = f"{system}\n\n---\n\n{CONFIDENTIALITY}"
+            stable = f"{stable}\n\n---\n\n{self.vocab}"
+        volatile = f"\n\n---\n\n{framing}\n\n---\n\n{CONFIDENTIALITY}"
         if BRAIN_ENABLED:
             try:
                 notes = brain.load_for(speakers or set())
@@ -2269,7 +2324,8 @@ class PersonaBot(discord.Client):
             log.exception("Personnel failed to load; carrying on without it")
             outside = ""
         if outside:
-            system = f"{system}\n\n---\n\n{outside}"
+            volatile = f"{volatile}\n\n---\n\n{outside}"
+        system = _system_blocks(stable, volatile)
         if instruction:
             user = (
                 "Here is the recent conversation in the channel:\n\n"
@@ -2292,6 +2348,7 @@ class PersonaBot(discord.Client):
             messages=[{"role": "user", "content": _with_images(user, images)}],
         )
 
+        _log_cache(response.usage)
         if response.stop_reason == "refusal":
             log.warning("Model declined to respond: %s", response.stop_details)
             return ""
