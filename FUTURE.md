@@ -263,3 +263,112 @@ Hardest item here to do well - posting a *relevant* link requires either a
 curated pool or search, and a bad link is far more conspicuous than no link.
 Re-sharing something from the channel's own history is the cheap version and
 fits the callback behavior in #5.
+
+## 15. A tool that interviews Jack and writes the notes ⏭️
+
+**The highest-value data in the system is 96% empty, and no bot feature moves
+that number.** `personnel/general/people.yml` maps 26 people. One of them,
+slaymakerlol, has notes with prose in them. Six more have directories holding
+a blank form. The brain can only ever produce the observable half, and the
+half that actually distinguishes this from a generic shitposter - stance,
+handling, history, grudges - exists nowhere but in Jack's head.
+
+The bottleneck is not storage, retrieval, or budget. It is that writing five
+paragraphs about a friend from a cold start is work, and it stays undone.
+
+**Design sketch:**
+
+- `tools/interview.py <slug>`. Reads the brain profile for observed material
+  and the existing notes for what is already answered.
+- Drafts three to five specific questions from what the scan saw, not generic
+  ones. "The scan says he is guildmaster and runs the raid schedule. Is the
+  authority the thing you go after, or is that too easy?" beats "what do you
+  think of him?" every time, because the first can be answered in a sentence.
+- Takes the answers as free prose, in any order, and writes `notes.md` in the
+  register the slaymakerlol file established.
+- Never invents. An unanswered heading is left out entirely, per the blank
+  form rule.
+
+Worth building before anything that consumes personnel content more cleverly.
+Better retrieval over an empty directory retrieves nothing.
+
+## 16. Instrumentation: what actually got injected
+
+**There is currently no way to answer "did writing Zack's notes change
+anything?"** The prompt assembles a persona, a psychology document, core
+profiles, situational profiles and personnel notes, and logs none of it. The
+only line on the subject is one at startup naming the provider.
+
+`_observe` records six kinds of event - blocked, dm, gif, image, opener, pass -
+and ordinary replies are not among them. The one thing the bot does most is
+the one thing it does not write down.
+
+**Design sketch:**
+
+- Log the slugs injected per reply and the character cost of each block.
+- Add a `reply` observation carrying which sources were in the prompt.
+- That is enough to answer: which profiles are actually reaching prompts, what
+  the split between generated and hand-written content costs, and whether a
+  person's notes correlate with anything.
+
+Cheap, no model call, and it is the precondition for #8 meaning anything. An
+eval harness that cannot see what went into the prompt can only score outputs
+against vibes, which is what #8 exists to replace.
+
+## 17. Doctor check for profile health
+
+A scan now refuses to write a profile that is truncated or carries a term from
+`REDACT_TERMS`. Refusing means the previous file stays, so **a bad profile
+written before those guards existed persists silently and forever.**
+`wurmz.md` is truncated mid-sentence right now, and nothing surfaces it - it
+was found by grepping the last line of every file by hand.
+
+`check_7_brain` alongside the personnel check, failing nothing, reporting:
+generated halves that end mid-sentence, any file matching `REDACT_TERMS`, a
+handle with `is_bot` true that still has a file, and profiles older than the
+last scan by a wide margin. `brain/people/` is gitignored, so nothing else is
+watching it at all.
+
+## 18. Documents that remember they had a previous version
+
+The artifact path writes `v4.2 FINAL FINAL` on a spreadsheet, which is funny
+once and implies a history that does not exist. Ask twice and you get two
+unrelated documents that both claim to be revisions of nothing.
+
+**A registry of what he has produced** - shape, subject, date, and one line of
+what was in it - lets him refer back. "That is covered in the attendance
+ledger, row 4, which you are not allowed to edit" is a better joke than the
+ledger was, and it costs one line of storage per document.
+
+Natural companion to #6, and probably the same file. Both are the same problem:
+the persona claims a continuity the architecture does not have.
+
+## 19. Knowing who is actually in the room
+
+Distinct from #4, which is about *when* to post. This is about *who* to
+address. The bot names people freely with no model of whether they are around,
+so it can open by needling someone who has not spoken in six hours - a thing a
+person in a group chat does not do, because they can see the sidebar.
+
+Discord exposes presence and the transcript already carries who spoke recently.
+Cheap version: never address by name anyone absent from the last N messages
+unless replying to them directly. Better version: weight who gets named by how
+recently they spoke.
+
+Also the missing input for #3 and for openers. An opener aimed at nobody in
+particular reads differently from one aimed at a person who is not there.
+
+## 20. Unprompted deliverables, rationed hard
+
+The ASCII path has an overkill mode: answer a trivial question with a full
+diagram, once a day, because the disproportion is the joke. The artifact path
+has no equivalent, and only ever fires when asked.
+
+The unprompted version is stronger, and riskier. Somebody says "we should
+sort out raid times" and gets back a scheduling document nobody asked for.
+It needs the same discipline the art path uses - a trigger narrow enough that
+it only fires on something genuinely offhand, and a budget of about one a day -
+because a bot that produces documents at people unprompted is the exact failure
+the on-request-only rule was written to avoid.
+
+Build after #16, so there is a way to tell whether it landed.

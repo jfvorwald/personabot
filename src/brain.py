@@ -33,6 +33,7 @@ from collections import defaultdict
 
 from dotenv import load_dotenv
 
+import guard
 from paths import ROOT, at_root
 
 load_dotenv(at_root(".env"))
@@ -53,6 +54,14 @@ BRAIN_MIN_NEW = int(os.getenv("BRAIN_MIN_NEW", "25"))
 BRAIN_SCAN_LIMIT = int(os.getenv("BRAIN_SCAN_LIMIT", "4000"))
 # Handles never profiled - your own account, the bot itself.
 BRAIN_EXCLUDE = [h.strip().lower() for h in os.getenv("BRAIN_EXCLUDE", "").split(",") if h.strip()]
+# The same list the live bot checks its outgoing messages against. A profile is
+# not an outgoing message, which is exactly why this was missed: nothing here
+# reaches Discord, so nothing here looked like it needed checking. But a
+# profile goes into the system prompt, and a forbidden name in the prompt is an
+# instruction to say it - and every reply that takes the hint is then killed on
+# the way out, with a BLOCKED line in the log and no other symptom. A scan
+# wrote a redacted name into a profile on 2026-08-26 and that is what it did.
+REDACT_TERMS = [t.strip() for t in os.getenv("REDACT_TERMS", "").split(",") if t.strip()]
 
 MODEL = os.getenv("BRAIN_MODEL", os.getenv("MODEL", "claude-sonnet-5"))
 
@@ -115,14 +124,25 @@ def count_new(message_ids: list[int], since: int) -> int:
     return sum(1 for mid in message_ids if mid > since)
 
 
-def _is_excluded(user_id: str, handle: str, display: str) -> bool:
+def _is_excluded(
+    user_id: str, handle: str, display: str, is_bot: bool = False
+) -> bool:
     """Never-profile check. Ids are authoritative; names are a convenience.
 
     A name match is offered so BRAIN_EXCLUDE is writable before you know
     anyone's id, but it is not sufficient on its own - once someone is excluded
     the flag is persisted against their id and honoured from then on, so a
     rename can't quietly bring them back into scope.
+
+    No bot is ever profiled, whatever the list says. The exclude list already
+    named two of them, and it still missed the counterpart the day his display
+    name became fullwidth characters inside angle brackets: 1164 messages
+    written up under the handle "unknown", with is_bot sitting True in the
+    index the whole time. A flag Discord hands us for free is worth more than
+    a string we have to keep in step with somebody's nickname.
     """
+    if is_bot:
+        return True
     return (
         user_id in BRAIN_EXCLUDE
         or handle.lower() in BRAIN_EXCLUDE
@@ -292,7 +312,16 @@ async def _write_one(client, handle, display, entries, existing_generated):
         # Silently keeping a note that stops mid-sentence is worse than none.
         print(f" TRUNCATED at max_tokens - skipped")
         return None
-    return "".join(b.text for b in response.content if b.type == "text").strip()
+    text = "".join(b.text for b in response.content if b.type == "text").strip()
+    leak = guard.find_leak(text, [], REDACT_TERMS)
+    if leak is not None:
+        # Refusing costs this person their profile until the term is dealt
+        # with, which is loud and annoying and better than the alternative.
+        # Editing the sentence for them would mean guessing what they meant,
+        # and writing it anyway poisons every prompt that person appears in.
+        print(f" contains a {leak} - skipped, profile left as it was")
+        return None
+    return text
 
 
 async def scan(channel_id: int, force: bool) -> int:
@@ -355,7 +384,9 @@ async def scan(channel_id: int, force: bool) -> int:
                 # id for exactly that reason, and matching the exclude list
                 # against a name silently un-excludes someone the day they
                 # rename themselves.
-                if _is_excluded(str(uid), handle, display) or entry.get("excluded"):
+                if _is_excluded(
+                    str(uid), handle, display, author.bot
+                ) or entry.get("excluded"):
                     print(f"  {display:20s} excluded")
                     entry["excluded"] = True
                     continue
