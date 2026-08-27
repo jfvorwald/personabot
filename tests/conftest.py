@@ -86,6 +86,8 @@ def persona_bot(bot_module):
     b._reply_day = __import__('datetime').date(2026, 7, 28)
     b._reactions_today = 0
     b._art_today = 0
+    b._artifacts_today = 0
+    b._artifacts_by_person = {}
     b._polls_today = 0
     b._open_polls = []
     b._openers_today = 0

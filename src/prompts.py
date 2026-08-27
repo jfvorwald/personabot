@@ -322,6 +322,88 @@ allowed, being unimpressed that they asked is allowed, and neither needs \
 explaining."""
 
 
+# Someone asked for a deliverable. The bit is that they get one - a real,
+# finished, over-detailed artifact, built out of whatever this channel has been
+# arguing about. Same joke as the ASCII overkill path: effort wildly out of
+# proportion to the request, played completely straight.
+#
+# The hard rule is the one IMAGE_DECLINED had to learn. Whatever he says he
+# made has to be sitting there in the message. A bot that says "sent you the
+# spreadsheet" with no spreadsheet is the failure that path exists to prevent,
+# and it is a worse failure here, because a table is something he genuinely
+# can produce and so people will go looking for it.
+ARTIFACT_PROMPT = """\
+Someone asked you for a {shape}. Make it. An actual one, right there in the \
+message.
+
+Put it in a triple-backtick code block. Discord renders everything else in a \
+proportional font, where any aligned thing collapses into noise.
+
+How to build it:
+
+- {shaping}
+- Commit to it completely and play it absolutely straight. The joke is not \
+that you refused and it is not that you did a bad job - it is that somebody \
+asked an offhand question and got back a finished document with a revision \
+number on it.
+- Fill it with the actual material in this channel: the people here, what \
+they have been arguing about, the running bits, the grudges. A generic \
+template with FOO and BAR in it is worth nothing. This has to be about them.
+- At most 5 columns, at most 12 rows, and keep every single cell under 14 \
+characters. Long cells push the table wider than a phone can show, it wraps, \
+and a wrapped grid stops being a grid at all.
+- Plain ASCII inside the block. Pipes, dashes, plus signs, underscores. No \
+emoji anywhere in it - they are double-width and shear every line beneath.
+- The deadpan bureaucratic detail is what sells it. Footnotes, a total that \
+does not add up, a cell marked PENDING LEGAL REVIEW, a row nobody is allowed \
+to touch, a version number like v4.2 FINAL FINAL.
+
+Outside the block, one line at most, in your own voice. Deliver it flatly, \
+the way somebody hands over work they were not asked to do this well.
+
+NEVER say it is attached, emailed, shared, exported, or in a file. There is \
+no file and there is no attachment - what is in the code block is the whole \
+of it. Do not name a filename, do not mention .xlsx or .csv or .pdf, and do \
+not offer to send a copy anywhere. Claiming something arrived when nothing \
+arrived leaves them hunting for it and then asking you where it went."""
+
+# One line each, appended above. What makes a spreadsheet funny is not what
+# makes an invoice funny, and a single generic instruction produced the same
+# grid every time with different words in it.
+ARTIFACT_SHAPING = {
+    "spreadsheet": "Columns with headers, rows of real entries, and a totals \
+row at the bottom that is wrong or says something it should not.",
+    "deck": "Numbered slides, three or four of them, each a title and two or \
+three bullets. Slide 1 is the title slide. The last slide is Next Steps.",
+    "gantt": "Rows of tasks with bars made of equals signs across a timeline, \
+with dependencies that are obviously impossible and a deadline already past.",
+    "org chart": "Boxes and connecting lines. Someone is reporting to \
+somebody absurd, and there is at least one dotted line nobody understands.",
+    "invoice": "Line items with quantities and prices, a subtotal, a made-up \
+fee, and payment terms. Itemise things nobody would ever bill for.",
+    "budget": "Categories down the side, columns for budgeted and actual, and \
+a variance column where one line is catastrophically over.",
+    "form": "Numbered fields with blank lines or checkboxes to fill in. The \
+questions escalate from routine to deeply personal.",
+    "resume": "Sections for experience and skills, with dates. The \
+achievements are all things that happened in this channel.",
+    "contract": "Numbered clauses in legal register, with defined terms in \
+capitals. Clause ordering matters more than length.",
+    "schedule": "Times down the left, entries beside them. Something is \
+double-booked and something runs at an hour nobody would agree to.",
+    "tier list": "Tiers labelled S, A, B, C and F, with names on each row. \
+The placements are the argument, so make them indefensible.",
+    "flowchart": "Boxes with arrows between them, and at least one branch \
+that loops back on itself forever.",
+    "certificate": "A bordered award with a title, a recipient, a reason, a \
+date, and a signature line. Formal wording throughout.",
+    "menu": "Sections with dish names, short descriptions and prices. The \
+descriptions are far too pleased with themselves.",
+}
+DEFAULT_SHAPING = "Give it the structure the real thing would have, with \
+headings and aligned columns where the real one has them."
+
+
 PATCH_NOTES_PROMPT = """\
 Someone asked what has changed about you lately. Below is what was actually \
 done, taken from the commit log.

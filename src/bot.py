@@ -70,10 +70,13 @@ from config import *  # noqa: F403  (every setting, by name)
 
 from prompts import (
     ART_OVERKILL_INSTRUCTION,
+    ARTIFACT_PROMPT,
+    ARTIFACT_SHAPING,
     ASCII_ART_PROMPT,
     BRUSH_OFF_PROMPT,
     NO_UPDATES_PROMPT,
     CONFIDENTIALITY,
+    DEFAULT_SHAPING,
     PATCH_NOTES_PROMPT,
     POLL_LOST_PROMPT,
     POLL_PROMPT,
@@ -153,6 +156,8 @@ class PersonaBot(discord.Client):
         self._messages_waited = 0
         self._reactions_today = 0
         self._art_today = 0
+        self._artifacts_today = 0
+        self._artifacts_by_person = {}
         self._polls_today = 0
         self._open_polls: list[int] = []
         self._openers_today = 0
@@ -328,6 +333,8 @@ class PersonaBot(discord.Client):
                         "by_person": self._replies_by_person,
                         "reactions": self._reactions_today,
                         "art": self._art_today,
+                        "artifacts": self._artifacts_today,
+                        "artifacts_by_person": self._artifacts_by_person,
                         "polls": self._polls_today,
                         "open_polls": self._open_polls,
                         "openers": self._openers_today,
@@ -360,6 +367,8 @@ class PersonaBot(discord.Client):
         self._replies_by_person = state.get("by_person", {}) or {}
         self._reactions_today = state.get("reactions", 0)
         self._art_today = state.get("art", 0)
+        self._artifacts_today = state.get("artifacts", 0)
+        self._artifacts_by_person = dict(state.get("artifacts_by_person", {}))
         self._polls_today = state.get("polls", 0)
         self._open_polls = state.get("open_polls", [])
         self._openers_today = state.get("openers", 0)
@@ -389,6 +398,8 @@ class PersonaBot(discord.Client):
         self._replies_by_person = {}
         self._reactions_today = 0
         self._art_today = 0
+        self._artifacts_today = 0
+        self._artifacts_by_person = {}
         # Was omitted here, so the poll budget only ever refilled on a restart:
         # a process that stayed up for a week got two polls for the week.
         self._polls_today = 0
@@ -968,6 +979,43 @@ class PersonaBot(discord.Client):
                  self._art_today + 1, ART_DAILY_MAX)
         return ASCII_ART_PROMPT.format(ask=ART_OVERKILL_INSTRUCTION)
 
+    def _artifact_instruction(self, message: discord.Message) -> str | None:
+        """A deliverable, if somebody actually asked for one.
+
+        Only ever on request - there is no unprompted version, because a
+        spreadsheet nobody asked for is not a joke, it is a bot generating
+        documents at people. Rationed per person all the same: a bit that
+        fires every single time is not a bit any more, it is a command.
+        """
+        if not ARTIFACT_ENABLED:
+            return None
+        text = message.clean_content
+        # The ASCII path owns "chart", "diagram" and "graph", and had them
+        # first. A new surface does not get to quietly take words off an old
+        # one, so anything it claims is settled before we look.
+        if decide.wants_ascii(text) or decide.is_art_request(text):
+            return None
+        shape = decide.wants_artifact(text)
+        if not shape:
+            return None
+
+        who = str(message.author.id)
+        spent = self._artifacts_by_person.get(who, 0)
+        if ARTIFACT_PER_PERSON_MAX and spent >= ARTIFACT_PER_PERSON_MAX:
+            log.info("Asked for a %s, but they have had %d today", shape, spent)
+            return None
+        if ARTIFACT_DAILY_MAX and self._artifacts_today >= ARTIFACT_DAILY_MAX:
+            log.info("Asked for a %s, but the channel is out for today", shape)
+            return None
+
+        log.info("Building a %s (%d/%s today, %d for them)",
+                 shape, self._artifacts_today + 1, ARTIFACT_DAILY_MAX or "∞",
+                 spent + 1)
+        return ARTIFACT_PROMPT.format(
+            shape=shape,
+            shaping=ARTIFACT_SHAPING.get(shape, DEFAULT_SHAPING),
+        )
+
     def _offer_image(self, message, asked_outright: bool = False) -> str:
         """Should this reply even be allowed to carry a picture?
 
@@ -1259,9 +1307,9 @@ class PersonaBot(discord.Client):
         )
         if searched:
             log.info("Looked it up (%d search%s)", searched, "es" if searched > 1 else "")
-        text = guard.de_dash(
+        text = guard.align_tables(guard.de_dash(
             "".join(b.text for b in response.content if b.type == "text").strip()
-        )
+        ))
         return text if self._safe_to_send(text) else ""
 
     def _offer_gif(self, message) -> bool:
@@ -1605,6 +1653,7 @@ class PersonaBot(discord.Client):
             or self._wants_patch_notes(message)
             or (HELP_ENABLED and decide.might_need_help(message.clean_content))
             or (ART_ENABLED and decide.is_art_request(message.clean_content))
+            or (ARTIFACT_ENABLED and decide.wants_artifact(message.clean_content))
             or (POLL_ENABLED and decide.is_poll_request(message.clean_content))
         ):
             # Adjacency pairs: a question aimed at us makes an answer
@@ -1660,6 +1709,10 @@ class PersonaBot(discord.Client):
             # Fell through: not a usable poll, so carry on as a normal reply.
 
         art = self._art_instruction(message)
+        # Only one bit per message. ASCII art had these words first, and
+        # _artifact_instruction stands down for anything it claims, so a
+        # message can never arrive here having armed both.
+        artifact = None if art else self._artifact_instruction(message)
         # Decided before the branches so the dice are rolled exactly once, and
         # so a commission can outrank the ASCII path below.
         patch_notes = self._wants_patch_notes(message)
@@ -1700,6 +1753,18 @@ class PersonaBot(discord.Client):
             )
             if reply:
                 self._art_today += 1
+        elif artifact:
+            reply = await self.generate(
+                transcript, instruction=artifact, speakers=speakers
+            )
+            # Counted only when something actually came back. A refusal or a
+            # dropped call must not spend a person's allowance on nothing.
+            if reply:
+                who = str(message.author.id)
+                self._artifacts_today += 1
+                self._artifacts_by_person[who] = (
+                    self._artifacts_by_person.get(who, 0) + 1
+                )
         else:
             # Only ordinary replies can carry a picture. Patch notes and ASCII
             # art are each already a bit with its own shape, and stacking two
@@ -2080,9 +2145,9 @@ class PersonaBot(discord.Client):
         if response.stop_reason == "refusal":
             log.warning("Model declined in a DM: %s", response.stop_details)
             return ""
-        text = guard.de_dash(
+        text = guard.align_tables(guard.de_dash(
             "".join(b.text for b in response.content if b.type == "text").strip()
-        )
+        ))
         return text if self._safe_to_send(text, direct=True) else ""
 
     def _safe_to_send(self, text: str, direct: bool = False) -> bool:
@@ -2231,11 +2296,11 @@ class PersonaBot(discord.Client):
             log.warning("Model declined to respond: %s", response.stop_details)
             return ""
 
-        text = guard.de_dash(
+        text = guard.align_tables(guard.de_dash(
             "".join(
                 block.text for block in response.content if block.type == "text"
             ).strip()
-        )
+        ))
         # Single choke point: every message the bot posts, of every kind, comes
         # back through here, so the guard only has to be applied once.
         if not self._safe_to_send(text):

@@ -168,6 +168,25 @@ ART_OVERKILL_CHANCE = float(os.getenv("ART_OVERKILL_CHANCE", "0.12"))
 # A question long enough to be interesting does not need a diagram.
 ART_TRIVIAL_MAX_WORDS = int(os.getenv("ART_TRIVIAL_MAX_WORDS", "8"))
 
+# Deliverables. Someone asks for a spreadsheet and gets a spreadsheet: a real
+# one, in a code block, built out of whatever the channel is arguing about.
+# Same joke as the ASCII overkill above - effort out of all proportion, played
+# straight - but this one only ever fires on request, so it is not rationed
+# for being intrusive. It is rationed because a bit that answers every time
+# stops being a bit and becomes a command people type at him.
+#
+# Pictures stay exactly as they were. Nothing here touches imagegen: a table
+# is something Jaq can genuinely produce in a message, which is the whole
+# reason it is safe to say yes to.
+ARTIFACT_ENABLED = os.getenv("ARTIFACT_ENABLED", "true").lower() == "true"
+# Per person, so one afternoon of somebody enjoying it does not leave the rest
+# of the channel with a bot that mysteriously stopped playing along - the same
+# complaint the per-person picture cap exists to answer.
+ARTIFACT_PER_PERSON_MAX = int(os.getenv("ARTIFACT_PER_PERSON_MAX", "3"))
+# A backstop against a runaway rather than the rationing mechanism, set well
+# above what the per-person cap allows in an ordinary day. 0 removes it.
+ARTIFACT_DAILY_MAX = int(os.getenv("ARTIFACT_DAILY_MAX", "12"))
+
 # Pictures. Nobody can ask for one: there is no command surface and a request
 # in the channel is just another message Jaq reads. He is offered the option
 # occasionally and takes it when he wants to, which is what keeps an image

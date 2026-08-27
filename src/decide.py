@@ -327,6 +327,94 @@ def is_picture_request(text: str) -> bool:
     return False
 
 
+# Deliverables people ask for that can be made for real inside a code block.
+# Each noun maps to the shape the prompt should build. Narrow on purpose, the
+# same way ART_NOUNS is: this fires a whole bit, so a word that merely appears
+# in a sentence about work must not trigger one. "summary", "list" and "notes"
+# were all considered and left out - people ask for those meaning "tell me",
+# and answering in words is the correct reply to that.
+ARTIFACT_NOUNS = {
+    "spreadsheet": "spreadsheet", "spreadsheets": "spreadsheet",
+    "excel": "spreadsheet", "xlsx": "spreadsheet", "csv": "spreadsheet",
+    "table": "spreadsheet", "sheet": "spreadsheet",
+    "deck": "deck", "slides": "deck", "slide": "deck",
+    "powerpoint": "deck", "presentation": "deck", "keynote": "deck",
+    "gantt": "gantt", "roadmap": "gantt", "timeline": "gantt",
+    "orgchart": "org chart", "hierarchy": "org chart",
+    "invoice": "invoice", "receipt": "invoice", "quote": "invoice",
+    "bill": "invoice",
+    "budget": "budget", "forecast": "budget", "projections": "budget",
+    "p&l": "budget",
+    "form": "form", "survey": "form", "questionnaire": "form",
+    "resume": "resume", "cv": "resume",
+    "contract": "contract", "nda": "contract", "agreement": "contract",
+    "schedule": "schedule", "roster": "schedule", "rota": "schedule",
+    "itinerary": "schedule", "agenda": "schedule",
+    "tierlist": "tier list", "leaderboard": "tier list",
+    "scoreboard": "tier list", "bracket": "tier list",
+    "flowchart": "flowchart", "wireframe": "flowchart",
+    "certificate": "certificate", "award": "certificate",
+    "menu": "menu",
+}
+
+# Two-word names, checked as substrings before the word scan because splitting
+# on whitespace loses them.
+ARTIFACT_PHRASES = {
+    "spread sheet": "spreadsheet", "pivot table": "spreadsheet",
+    "org chart": "org chart", "tier list": "tier list",
+    "slide deck": "deck", "pitch deck": "deck",
+    "gantt chart": "gantt", "flow chart": "flowchart",
+    "balance sheet": "budget", "purchase order": "invoice",
+    "performance review": "form", "incident report": "form",
+}
+
+ARTIFACT_VERBS = {
+    "make", "build", "create", "generate", "draft", "prepare", "write",
+    "produce", "compile", "assemble", "give", "gimme", "send", "show",
+    "whip", "cook", "throw", "put", "knock", "spin",
+}
+
+
+def wants_artifact(text: str) -> str | None:
+    """Which deliverable someone is asking for, if any.
+
+    Returns the shape to build - "spreadsheet", "deck", "invoice" - or None.
+    The verb has to be in imperative position, the same test is_art_request
+    and is_picture_request use: "build a spreadsheet" is an order, "the
+    spreadsheet is wrong" and "can anyone read this spreadsheet" are not.
+
+    Callers must check the ASCII art path first. "chart" and "diagram" belong
+    to that one, and the older surface does not get to quietly lose words to
+    the newer one.
+    """
+    lowered = text.strip().lower()
+    if not lowered:
+        return None
+    words = [w.strip("?!.,:;\"'") for w in lowered.split()]
+    if not words:
+        return None
+
+    blockers = WH_WORDS | AUXILIARIES | {
+        "someone", "anyone", "somebody", "anybody", "if", "that", "the",
+        "a", "an", "this", "these", "those", "my", "your", "his", "her",
+        "their", "our", "its",
+    }
+    for i, word in enumerate(words):
+        if word not in ARTIFACT_VERBS:
+            continue
+        if set(words[:i]) & blockers:
+            return None
+        rest = lowered.split(word, 1)[1]
+        for phrase, shape in ARTIFACT_PHRASES.items():
+            if phrase in rest:
+                return shape
+        for later in words[i + 1:]:
+            if later in ARTIFACT_NOUNS:
+                return ARTIFACT_NOUNS[later]
+        return None
+    return None
+
+
 def wants_ascii(text: str) -> bool:
     """Did they specifically ask for ASCII, rather than for a picture?
 
