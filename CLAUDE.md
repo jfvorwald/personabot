@@ -385,14 +385,29 @@ major feature. Pictures was fourteen commits and one version; a good day of
 small fixes is none at all. Cut one when something lands, not on a cadence.
 
 ```bash
-.venv/bin/python tools/release.py          # what would be tagged, no tag
-.venv/bin/python tools/release.py --tag    # create it
+.venv/bin/python tools/release.py                # what would be tagged, no tag
+.venv/bin/python tools/release.py --tag          # create it
+.venv/bin/python tools/release.py --tag --at SHA # a landing that already shipped
+.venv/bin/python tools/release.py --changelog    # rewrite CHANGELOG.md
 ```
 
 Tags are annotated and carry the commit subjects in the span, so `git show
-v0.6.0` explains that version without anyone maintaining a changelog - which
-works only because subjects here are already written to be read aloud. It
-refuses on a dirty tree: a tag should point at a state you can return to.
+v0.6.0` explains that version on its own - which works only because subjects
+here are already written to be read aloud. It refuses on a dirty tree: a tag
+should point at a state you can return to.
+
+**`CHANGELOG.md` is generated from those tags, never edited.** It is an output,
+so it cannot drift from what was actually released - there is nowhere for it to
+drift from. Cutting a release means three steps, and the tool prints the last
+two: tag, `--changelog`, then push the tag explicitly. A test fails if the
+newest tag is missing from the file. To correct an entry, retag.
+
+**Tagging the past is fine.** `--at` exists because twenty-two commits once
+accumulated past `v0.7.0` covering DMs, vision, help, GIFs, personnel,
+deliverables and caching - four landings inside no version at all. Leaving them
+in one number loses more than a late tag does. Note that tags cut out of order
+make "most recent tag" and "highest version" different questions, and that
+version sort is numeric: `v0.10.0` is newer than `v0.9.0`.
 
 Nothing pushes automatically. `changelog.version()` puts the running version in
 the startup banner and `./restart.sh status`, and degrades to "untagged" rather

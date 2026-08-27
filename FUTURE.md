@@ -61,9 +61,14 @@ Most of this is already built:
   you have written before," not as conversation history.
 - Cap at ~40 to keep the prompt bounded.
 
-**Open question:** exemplars go in the *stable* part of the prompt if selected
-once per restart, or the *volatile* part if selected per-reply. Per-reply is
-better output; restart-stable is better for caching (see #10).
+**Open question, now cheaper to answer:** exemplars go in the *stable* part of
+the prompt if selected once per restart, or the *volatile* part if selected
+per-reply. Per-reply is better output; restart-stable is better for caching.
+Since #10 shipped there is a real number on that tradeoff rather than a guess -
+the stable half is 8222 tokens and is read back at 0.1x on 61% of calls, so
+per-reply selection of ~40 exemplars would sit in the volatile half and be paid
+for in full every time. Measure it against the cached alternative before
+choosing; the logging added in #10 is what makes that measurable.
 
 ## 2. Reactions ✅ SHIPPED
 
@@ -189,19 +194,41 @@ The fix is a single `current_run()` helper - awk from the last `===== started`
 marker to the end - shared by both the startup wait and `status`, so the two
 cannot disagree about which run they are reading.
 
-## 10. Prompt caching (ops, low priority)
+## 10. Prompt caching ✅ SHIPPED (v0.11.0)
 
-The brain injection currently lands situational profiles inside the system
-prompt, so the prefix changes whenever a different person is in the window and
-nothing downstream caches. Correct ordering is stable content first (persona +
-framing + core profiles) with the cache breakpoint there, and situational
-profiles after it.
+Shipped, and the entry below was wrong about the two things that decided it.
+Both errors came from estimating rather than measuring, which is the part
+worth keeping.
 
-**Worth roughly pennies per month at 15-40 messages/day** - most requests fall
-outside the 5-minute cache TTL anyway, so the write premium isn't recovered.
-Do it as cleanup, not as a priority. Relevant numbers on `claude-sonnet-5`:
-1024-token minimum cacheable prefix (the system prompt is ~5-6k, so it
-qualifies), cache reads ~0.1x, writes 1.25x at the 5-minute TTL.
+**"Most requests fall outside the 5-minute TTL, so the write premium isn't
+recovered."** Measured across 730 real API calls in `live.log`: the median gap
+between calls is **1.8 minutes**, and **61% arrive within five minutes** of the
+previous one. The traffic is bursty conversation, which is the exact shape
+caching is built for, and a cache read refreshes the entry's timer for free so
+a busy afternoon keeps one entry alive the whole way. The 1-hour TTL covers 79%
+but costs 2x to write, netting 51% off the prefix against 45% - not worth
+doubling the write price to be marginally better on an estimate.
+
+**"The system prompt is ~5-6k."** The stable half alone is **8222 tokens**,
+69% of it.
+
+**The reordering this entry called for turned out not to be needed.** Persona,
+psychology and vocabulary are read once at `__init__` and are byte-identical on
+every reply, so the breakpoint goes straight after them with the prompt left
+exactly as it was. Pulling the framing and confidentiality blocks into the
+cached half as well was measured: it buys 14% more cached tokens, which does
+not justify touching the document that defines how he talks.
+
+**Automatic caching is the wrong tool here** and would have cost money. The
+top-level form places the breakpoint on the last cacheable block, and the last
+block is the transcript, which differs on every request - so every call writes
+an entry at 1.25x and never reads one back. Automatic is for a conversation
+that grows across turns and reuses a lengthening prefix. This bot sends one
+fresh user message each time.
+
+Every reply now logs `Cache: N read, N written, N fresh`. The failure mode is
+silent - a later change to prompt assembly stops the prefix matching and
+nothing errors - so it is logged every time rather than checked once.
 
 ## 14. ASCII art: what the research actually showed
 
