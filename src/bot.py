@@ -1317,7 +1317,7 @@ class PersonaBot(discord.Client):
             except Exception:
                 notes = ""
             if notes:
-                volatile = f"{volatile}\n\n---\n\n{notes}"
+                system = f"{system}\n\n---\n\n{notes}"
         try:
             outside = personnel.load_for(speakers or set())
         except Exception:
@@ -2314,7 +2314,7 @@ class PersonaBot(discord.Client):
                 log.exception("Brain failed to load; carrying on without it")
                 notes = ""
             if notes:
-                system = f"{system}\n\n---\n\n{notes}"
+                volatile = f"{volatile}\n\n---\n\n{notes}"
         # Same place as the brain, on purpose. Both are per-person material and
         # a second injection point is a second thing to remember when the
         # privacy rules change.
