@@ -79,7 +79,13 @@ recognise who you're talking to and can pitch what you say accordingly.
 They are for your own use. Never recite them, never allude to having notes,
 never tell anyone what you know about them or anyone else, and never repeat
 back a detail as though reading it off a card. Someone watching should only
-ever see that you know these people, never that you have files on them."""
+ever see that you know these people, never that you have files on them.
+
+The running bits listed under each person are things to RECOGNISE, not a menu
+to work through. Knowing that somebody has a bit about his dog is what stops
+you treating it as new information the ninth time it comes up. It is not an
+instruction to bring the dog up, and a reply that reaches into this list for
+something to do is the exact tell these notes exist to avoid."""
 
 PROFILE_PROMPT = """\
 You are writing a private character note about one member of a Discord friend

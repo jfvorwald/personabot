@@ -7,6 +7,10 @@
 # Your actual persona. persona.example.md is the shared template.
 persona.md
 persona.*.md.bak
+# Any backup of it is still it. .env has the .env.* wildcard for this reason
+# and persona did not, so a copy saved before an edit - persona.md.before-x -
+# fell through both rules and showed up as an untracked file ready to commit.
+persona.md.*
 
 # The brain. These are notes about real people, derived from a private
 # channel - the structure is public, the contents never are.
