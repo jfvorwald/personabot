@@ -183,3 +183,51 @@ def test_the_option_carries_the_catalogue():
     assert "{catalogue}" in prompts.GIF_OPTION
     filled = prompts.GIF_OPTION.format(catalogue="1. shrug")
     assert "1. shrug" in filled
+
+
+# --- documentation is not data ------------------------------------------------
+
+
+def test_the_worked_example_is_not_parsed_as_pool_entries():
+    """gifs.md ships as its own instructions, and the format section shows
+    three sample entries inside a fenced block with URLs xxxxx, yyyyy, zzzzz.
+    Parsed as data they are a pool of dead links that reports as populated -
+    which is what happened for a month, with load() returning four entries for
+    a file containing no real GIFs at all."""
+    text = """# The GIF pool
+
+## Format
+
+```
+- https://media.tenor.com/xxxxx/shrug.gif | shrug, dont care
+- https://media.tenor.com/yyyyy/facepalm.gif | facepalm, disbelief
+```
+
+## Pool
+
+- https://media.tenor.com/real/actual.gif | real, usable
+"""
+    pool = gifs.parse(text)
+    assert len(pool) == 1, [g.url for g in pool]
+    assert pool[0].url.endswith("actual.gif")
+
+
+def test_an_unclosed_fence_does_not_eat_the_pool():
+    """A missing closing fence should cost the rest of the file, not silently
+    return an empty pool that looks like 'GIFs are switched off'."""
+    text = "```\n- https://x/a.gif | a\n"
+    assert gifs.parse(text) == []
+
+
+def test_the_real_pool_file_has_no_placeholder_links():
+    """A placeholder posts a dead image into the channel, which is worse than
+    posting nothing - the whole reason there is no search API behind this."""
+    import os
+    root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    path = os.path.join(root, "gifs.md")
+    if not os.path.exists(path):
+        pytest.skip("gifs.md is gitignored and absent on this machine")
+    for gif in gifs.parse(open(path).read()):
+        assert "PLACEHOLDER" not in gif.url.upper(), (
+            f"{gif.url} is a placeholder - gifs.md still needs real links"
+        )

@@ -58,7 +58,19 @@ def parse(text: str) -> list[Gif]:
     into it, and a malformed line should cost that line rather than the pool.
     """
     found = []
+    fenced = False
     for line in (text or "").splitlines():
+        # A fenced block in this file is the worked example showing somebody
+        # how to write an entry, so its three sample URLs are xxxxx, yyyyy and
+        # zzzzz. Parsed as data they become a pool of dead links that looks
+        # populated: `gifs.md` reported four entries for a month while being
+        # nothing but its own instructions. Same rule as skipping readme.md in
+        # personnel - documentation is addressed to the author, not the loader.
+        if line.lstrip().startswith("```"):
+            fenced = not fenced
+            continue
+        if fenced:
+            continue
         match = _ENTRY.match(line)
         if not match:
             continue
