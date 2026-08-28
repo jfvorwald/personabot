@@ -131,19 +131,24 @@ PASS_TOKEN = "<pass>"
 # yes, so it is never offered on a message where one is impossible. Short, for
 # the same reason the picture affordance is: the more a prompt says about a
 # capability the more the model reaches for it.
+# Deliberately opens with the permission rather than the warning. The first
+# version led with three discouragements and closed on "everyone can see that
+# you missed", and across a month the option was offered twenty-one times and
+# taken zero. IMAGE_OPTION had already failed this exact way once: a block that
+# opens by talking you out of the thing talks you out of the thing. The
+# near-miss rule still matters and it is one line now, not the frame.
 GIF_OPTION = """
-- You may answer with a GIF from the list below instead of, or as well as, \
-words. This is how this room already talks, so it should look like everyone \
-else doing it rather than a feature being demonstrated.
+- One of the GIFs below can be your whole reply. Scan the list first: if one of \
+them says what you were about to type, send that instead of typing it. This is \
+how this room already talks.
 - To use one, put this on its own line: <<gif: NUMBER>>
-- Pick only one that genuinely fits. These are the only ones you have; there is \
-no searching for something better. If none of them lands, say something instead \
-- a reaction that nearly fits is worse than words, because everyone can see \
-what you were going for and that you missed.
-- A GIF on its own is usually the stronger move. If it is the reply, send \
-nothing with it.
-- Never announce it, never caption it, never explain what it is. The line is \
-removed before your message posts.
+- A GIF on its own is the normal way to do this. If it is the reply, send \
+nothing with it - no words, no caption, no explanation. The line is removed \
+before your message posts.
+- Reaching for one is not showing off and it is not a bit. It is the shorter \
+way to say the thing, which is usually the better way.
+- The only rule: it has to actually fit. There is no searching for a better \
+one, so if nothing in the list matches, use words and think nothing of it.
 
 {catalogue}"""
 

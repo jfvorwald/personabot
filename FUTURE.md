@@ -280,6 +280,53 @@ a cache keyed on subject so repeat requests are free, and running it as a
 background task like reactions so an 80-second render cannot hold the reply
 lock and stall an `@mention`.
 
+## 21. GIFs: the pool works, the persona will not use it
+
+Investigated 2026-08-28 and parked, not because it is hard but because the only
+fix left was declined.
+
+Two real bugs were found and fixed. `gifs.md` had never been curated and was
+still its own template, and `parse()` was reading the three worked examples
+inside its fenced Format block as pool entries - so `load()` reported four GIFs
+for a file containing none, with the URLs `xxxxx`, `yyyyy` and `zzzzz`. Had the
+model ever picked one it would have posted a dead image. The pool now holds
+eight entries, every URL verified for a 200 before it went in.
+
+`GIF_OPTION` was also rewritten. It spent three of its five bullets
+discouraging the thing and closed on "everyone can see what you were going for
+and that you missed" - the same failure `IMAGE_OPTION` had already had once,
+opening with "usually don't".
+
+**None of it changed the outcome.** Measured across four attempts:
+
+| | picks |
+|---|---:|
+| real pool, original prompt | 0/5 |
+| `GIF_OPTION` rewritten to lead with permission | 0/10 |
+| explicit persona line, "a GIF can be the entire message" | 0/10 |
+| moved to the very end of the prompt | 0/8 |
+| **same option, minimal persona** | **2/5** |
+
+That last row is the whole finding. **`persona.md` is what suppresses it.** It
+is roughly 9500 tokens of how to choose words, and a single bullet offering an
+alternative to words does not survive contact with it. Wording, position and an
+explicit permission all fail; removing the persona works immediately.
+
+**The fix, if this is ever picked up again, is a separate classifier call.**
+The same shape `_asks_for_a_picture` already uses: a cheap `max_tokens=5` call
+given the last few messages and the tag list, asked which number fits or none,
+uncontaminated by a document telling it to write prose. That was offered and
+declined - it costs a call per eligible reply, and the honest position is that
+GIFs are not worth one.
+
+Deciding client-side and posting without asking would also work and is worse:
+it breaks the "Jaq chooses" principle that both the GIF and picture systems are
+built on, and a GIF nobody chose is the exact failure the curated pool exists
+to avoid.
+
+Until then the rates in `.env` are raised and inert. Anyone changing them
+should know the binding constraint is not the rate.
+
 ## 11. Link and media behavior
 
 A large share of how this group actually communicates is links, Tenor GIFs, and

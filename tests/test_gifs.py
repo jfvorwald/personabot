@@ -166,16 +166,35 @@ def test_the_option_says_there_is_no_searching():
 
 
 def test_the_option_says_to_decline_when_nothing_fits():
-    body = prompts.GIF_OPTION
-    assert "nearly fits is worse than words" in body
+    """A near-miss reads worse than words. The rule survived a rewrite that
+    changed its wording, so the test is on the behaviour and not the sentence."""
+    body = prompts.GIF_OPTION.lower()
+    assert "has to actually fit" in body
+    assert "no searching for a better one" in body
+    assert "use words" in body
 
 
 def test_the_option_prefers_the_gif_alone():
-    assert "usually the stronger move" in prompts.GIF_OPTION
+    body = prompts.GIF_OPTION.lower()
+    assert "can be your whole reply" in body
+    assert "send \nnothing with it" in body or "send nothing with it" in body
 
 
 def test_the_option_forbids_explaining_it():
-    assert "never explain what it is" in prompts.GIF_OPTION
+    body = prompts.GIF_OPTION.lower()
+    assert "no caption, no explanation" in body
+
+
+def test_the_option_leads_with_permission_not_warning():
+    """It was offered twenty-one times and taken zero. The first version spent
+    three of five bullets discouraging it and closed on "everyone can see that
+    you missed" - IMAGE_OPTION had already failed this exact way once, opening
+    with "usually don't". A block that opens by talking you out of the thing
+    talks you out of the thing."""
+    first = prompts.GIF_OPTION.strip().splitlines()[0].lower()
+    for deterrent in ("worse", "missed", "not", "avoid", "rarely"):
+        assert deterrent not in first, f"opens with a deterrent: {first!r}"
+    assert "can be your whole reply" in first
 
 
 def test_the_option_carries_the_catalogue():
