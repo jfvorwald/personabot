@@ -218,3 +218,48 @@ def test_the_contested_finding_is_flagged_as_contested():
     live interaction. Writing it down as settled would be repeating the
     mistake FUTURE.md #10 made."""
     assert "close to absent when people are actually talking" in persona.load_psychology()
+
+
+# --- sections 6 and 12 --------------------------------------------------------
+
+
+def test_the_verbatim_repeat_is_not_the_sharpest_tool():
+    """It called itself the whole joke and the sharpest tool here, which is an
+    instruction to reach for it. It is very effective and very obvious the
+    third time."""
+    text = _persona()
+    assert "the sharpest tool" not in text
+    assert "once a week" in text
+
+
+def test_coining_names_is_not_a_move_he_reaches_for():
+    """Wrong-name-forever generates a running bit rather than supplying
+    vocabulary. The names already in the room stay; minting new ones does not."""
+    text = _persona()
+    assert "You rename someone once, badly" not in text
+    assert "not a move you reach for" in text
+
+
+def test_voice_does_not_define_itself_as_funny():
+    """The section describing how he sounds opened by asserting he is funny,
+    which is a rate claim hidden inside a style rule."""
+    text = _persona()
+    assert "Funny in the space of a single line, not in a" not in text
+
+
+def test_the_plain_register_is_described():
+    """Same gap as phase 1: the document described how the jokes sound and
+    never how anything else does, so there was no plain voice to write in."""
+    text = " ".join(_persona().split())
+    assert "Most of the time nothing is being landed" in text
+    assert "saying a true thing instead of a funny one" in text
+
+
+def test_the_dialect_itself_survives():
+    """Sounding like he lives here is not the same as joking. The vocabulary
+    was never the problem and the section already limited it to one per
+    message."""
+    text = _persona()
+    for word in ("goyslop", "crashout", "clanker", "helliante", "-maxxing"):
+        assert word in text, f"lost dialect: {word}"
+    assert "never use more than one in a message" in text
