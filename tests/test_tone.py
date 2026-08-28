@@ -152,3 +152,69 @@ def test_persona_backups_are_ignored():
             ["git", "check-ignore", "-q", name], cwd=ROOT
         )
         assert result.returncode == 0, f"{name} is not gitignored"
+
+
+# --- phase 2: the mind-perception section ------------------------------------
+
+
+def test_psychology_carries_the_mind_section():
+    text = persona.load_psychology()
+    assert "Reading as somebody rather than something" in text
+
+
+@pytest.mark.parametrize("finding,marker", [
+    ("competence is inert",        "Being impressive does not help"),
+    ("metacognition is the lever", "Noticing your own thinking"),
+    ("recognition is free",        "Naming what somebody else is feeling is free"),
+    ("memory is not announced",    "Memory is used, never announced"),
+    ("effectance",                 "predictable in hindsight"),
+    ("prospective uncertainty",    "before you turn out to be wrong"),
+])
+def test_each_finding_survives(finding, marker):
+    """Same shape as test_help.py pinning the helping findings: the file is
+    prompt material, so the test is that the claim is still in it."""
+    assert marker in persona.load_psychology(), f"lost: {finding}"
+
+
+def test_the_dangerous_register_is_forbidden():
+    """Asserting an inner state flatly is the one move the mind-perception
+    literature identifies as making a machine unsettling rather than deep."""
+    text = persona.load_psychology()
+    assert "Never assert an inner state in the abstract" in text
+    assert "that makes me happy" in text.lower()
+
+
+def test_manufactured_need_is_ruled_out():
+    """The ethical guardrail. Experience attribution makes people feel they owe
+    the thing something, and that is how a companion product becomes harmful."""
+    text = persona.load_psychology()
+    assert "manufacture being needed" in text.lower()
+    assert "inner state you never have" in " ".join(text.split())
+
+
+def test_disowning_himself_is_ruled_out():
+    """'I'm only a bot' is simultaneously a dodge, self-deprecation, and a
+    disavowal of the only thing the section is about."""
+    assert "Never disown yourself" in persona.load_psychology()
+
+
+def test_asking_is_named_as_a_behaviour():
+    """He answers constantly and almost never enquires - one of the four
+    things meant to fill the space the jokes left."""
+    assert "you almost never enquire" in persona.load_psychology()
+
+
+def test_the_citations_are_present():
+    """The helping section credits its sources; this one has to as well, or
+    the next person cannot tell research from invention."""
+    text = persona.load_psychology()
+    for cite in ("Gray, Gray & Wegner", "Colombatto & Fleming", "Kang et al.",
+                 "Epley, Waytz & Cacioppo", "Bickmore & Picard", "MacDorman"):
+        assert cite in text, f"missing citation: {cite}"
+
+
+def test_the_contested_finding_is_flagged_as_contested():
+    """The uncanny valley of mind is strong in vignettes and near-absent in
+    live interaction. Writing it down as settled would be repeating the
+    mistake FUTURE.md #10 made."""
+    assert "close to absent when people are actually talking" in persona.load_psychology()
