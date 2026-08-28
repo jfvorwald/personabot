@@ -64,10 +64,26 @@ check_syntax() {
     fi
 }
 
+# When did this process actually start, as a unix timestamp?
+#
+# From /proc, not from `ps -o lstart=`. ps derives the start time by adding the
+# process age to the boot time in /proc/stat, and under WSL2 that boot time
+# drifts - observed reporting a process as four minutes older than it was. That
+# is enough to make a file edited seconds BEFORE a deploy look like it was
+# edited after one, which produced a false STALE warning twice, the second time
+# while answering "is it running with the changes?" with a flat no.
+#
+# The ctime of /proc/<pid> is set when the process is created and needs no
+# arithmetic against a clock that moves.
+started_at() {
+    stat -c %Y "/proc/$1" 2>/dev/null || date -d "$(ps -o lstart= -p "$1")" +%s 2>/dev/null
+}
+
 # Is anything on disk newer than the running process?
 check_stale() {
     local pid=$1 started stale=0
-    started=$(date -d "$(ps -o lstart= -p "$pid")" +%s 2>/dev/null) || return 0
+    started=$(started_at "$pid") || return 0
+    [ -n "$started" ] || return 0
     for f in "${WATCHED[@]}"; do
         [ -f "$f" ] || continue
         if [ "$(stat -c %Y "$f")" -gt "$started" ]; then
@@ -137,7 +153,7 @@ status() {
         echo "NOT RUNNING"
         return 1
     fi
-    echo "running  pid $pid  since $(ps -o lstart= -p "$pid" | xargs)"
+    echo "running  pid $pid  since $(date -d "@$(started_at "$pid")" 2>/dev/null || ps -o lstart= -p "$pid" | xargs)"
     # Only the current run: the log spans every deploy now.
     awk '/^===== started/{buf=""} {buf=buf $0 ORS} END{printf "%s", buf}' "$LOG" 2>/dev/null |
         grep -E 'Logged in as|Live mode:|DMs:|Mentions:|Allies:|Pictures:|New day|Resuming today|Poking|Idle openers:' |
