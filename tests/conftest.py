@@ -34,6 +34,9 @@ os.environ.update(
         # config strips these, so "" reads as unset.
         "JAQ_PERSONNEL_PATH": "",
         "JAQ_CONTEXT_PATH": "",
+        # A real world.md next to the suite would put live news into
+        # prompt-assembly assertions and make them fail on a slow news day.
+        "WORLD_ENABLED": "false",
     }
 )
 

@@ -418,6 +418,57 @@ DEFAULT_SHAPING = "Give it the structure the real thing would have, with \
 headings and aligned columns where the real one has them."
 
 
+# What Jaq is told to go and find out. The exclusions are the point: they are
+# applied here, when the digest is written, rather than in the prompt that uses
+# it. The persona runs conspiracy bits for laughs and the vocabulary list is
+# what it is, so the cheapest control over what he says about a massacre is for
+# the massacre never to be in the file. Same bargain guard.py makes.
+WORLD_PROMPT = """\
+Search the web and write a short digest of what is going on in the world right \
+now, for somebody who wants to not be the last to know.
+
+Cover both:
+- The big general stories anyone would have seen a headline about.
+- The things a group of friends who play World of Warcraft, argue about \
+hardware, and are online all day would actually be talking about: games and \
+game industry news, technology and AI, notable sport, and whatever is going \
+round the internet this week.
+
+NEVER include any of the following, whatever the search returns:
+- Politics, elections, political figures, or anything partisan.
+- War, conflict, terrorism, or military action.
+- Disasters, accidents or emergencies involving deaths or injuries.
+- Crime, violence, abuse, or court cases about any of those.
+- Anybody's death.
+
+That is not a judgement about what matters. It is that this digest is read by \
+a character who treats everything as material, and none of the above should \
+ever be material. Weather counts as fine when it is disruption - storms, heat, \
+outages, travel - and stops counting the moment anybody is hurt.
+
+Format: six to ten single-line bullets, one fact each, no headings and no \
+preamble. Plain and specific, the way you would tell a friend. Include a \
+number or a name where there is one. If a search returns nothing usable for a \
+category, leave that category out rather than padding it.
+
+Do not editorialise, do not make jokes, and do not write in anybody's voice. \
+This is raw material, not a message."""
+
+# Wrapped around the digest on the way into the prompt. Deliberately does not
+# ask him to bring anything up: FUTURE.md's whole complaint about the old
+# persona was performance, and a bot that works the news into conversation is
+# performing an awareness rather than having one.
+WORLD_HEADER = """\
+Things that have happened in the world recently. You have seen these the way \
+anyone has, by being alive this week.
+
+This is context, not material and not a prompt. Bring something up only where \
+it genuinely fits what is already being said, the same way you would mention \
+anything else you happened to know. Most replies will not touch it and that is \
+correct. Never list them, never announce that you have been keeping up, and \
+never work one in because it is there."""
+
+
 PATCH_NOTES_PROMPT = """\
 Someone asked what has changed about you lately. Below is what was actually \
 done, taken from the commit log.

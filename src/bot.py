@@ -47,6 +47,7 @@ import guard
 import imagegen
 import improve
 import personnel
+import world
 import react
 import vision
 from decide import fold
@@ -96,6 +97,8 @@ from prompts import (
     MAX_DISCORD_CHARS,
     OBEY_PROMPT,
     PICTURE_INTENT_PROMPT,
+    WORLD_HEADER,
+    WORLD_PROMPT,
     OPENER_PROMPT,
     PASS_TOKEN,
     POKE_PROMPT,
@@ -192,6 +195,8 @@ class PersonaBot(discord.Client):
         self.idle_opener = tasks.loop(minutes=IDLE_CHECK_MINUTES)(self._idle_tick)
         self.poke_ben = tasks.loop(minutes=1)(self._poke_tick)
         self._poke_times: list = []
+        self.world_watch = tasks.loop(minutes=1)(self._world_tick)
+        self._world_times: list = []
         # Redrawn after every opener; see _draw_idle_target.
         self._idle_target = 0.0
 
@@ -440,6 +445,7 @@ class PersonaBot(discord.Client):
             self._reactions_today,
         )
         self._schedule_pokes(today)
+        self._schedule_world(today)
         return True
 
     def _roll_day(self, today) -> None:
@@ -473,6 +479,7 @@ class PersonaBot(discord.Client):
             log.info("New day (%s): budget is %d replies", today, self._daily_budget)
         self._save_day()
         self._schedule_pokes(today)
+        self._schedule_world(today)
 
     def _schedule_pokes(self, today) -> None:
         """Draw this day's random times for ambushing the counterpart bot."""
@@ -646,6 +653,7 @@ class PersonaBot(discord.Client):
                 else "off",
             )
             log.info("Personnel: %s.", personnel.describe())
+            log.info("World: %s.", world.describe())
             log.info(
                 "Pictures: %s",
                 f"{GEMINI_IMAGE_MODEL}, offered on {IMAGE_BASE_RATE:.0%} of "
@@ -664,6 +672,8 @@ class PersonaBot(discord.Client):
                 self._roll_day(today)
             if not self.poke_ben.is_running():
                 self.poke_ben.start()
+            if WORLD_ENABLED and not self.world_watch.is_running():
+                self.world_watch.start()
             if not self.idle_opener.is_running():
                 self.idle_opener.start()
                 window = (
@@ -1643,6 +1653,65 @@ class PersonaBot(discord.Client):
             return True
         return False
 
+    def _schedule_world(self, today) -> None:
+        """Draw today's times for going and reading the news.
+
+        Random rather than on the hour, same reasoning as pokes: this is the
+        one part of the bot meant to look like somebody catching up over
+        breakfast, and a fetch at 07:00:00 every morning is the opposite.
+        """
+        from datetime import datetime, timedelta
+
+        self._world_times = []
+        if not WORLD_ENABLED:
+            return
+        count = random.randint(WORLD_MIN_PER_DAY, WORLD_MAX_PER_DAY)
+        if count <= 0:
+            return
+
+        chosen: list[int] = []
+        for _ in range(500):
+            if len(chosen) == count:
+                break
+            m = random.randint(WORLD_WINDOW_START * 60, WORLD_WINDOW_END * 60)
+            if all(abs(m - c) >= WORLD_MIN_GAP_MINUTES for c in chosen):
+                chosen.append(m)
+        chosen.sort()
+
+        now = discord.utils.utcnow().astimezone(TIMEZONE)
+        for m in chosen:
+            when = datetime.combine(today, dtime(0, 0), tzinfo=TIMEZONE) + timedelta(
+                minutes=m
+            )
+            # A slot already past is dropped rather than fired at once, so a
+            # restart at midday does not trigger a burst of catch-up fetches.
+            if when > now:
+                self._world_times.append(when)
+        log.info(
+            "Reading the news today at: %s (digest: %s)",
+            ", ".join(t.strftime("%H:%M") for t in self._world_times) or "(none left)",
+            world.describe(),
+        )
+
+    async def _world_tick(self):
+        """Fetch the digest if a slot has come due."""
+        try:
+            now = discord.utils.utcnow().astimezone(TIMEZONE)
+            if now.date() != self._reply_day:
+                self._roll_day(now.date())
+            due = [t for t in self._world_times if t <= now]
+            if not due:
+                return
+            # Drop everything due at once, so a long stall cannot queue up
+            # several fetches and fire them back to back.
+            self._world_times = [t for t in self._world_times if t > now]
+            await world.refresh(
+                self.claude, MODEL, WORLD_PROMPT, WORLD_SEARCH_MAX,
+                WORLD_MAX_TOKENS,
+            )
+        except Exception:
+            log.exception("World check failed; will retry next slot")
+
     async def _reply_chance(
         self, message, counterpart: bool, mine: int, others_since_me: int
     ) -> float:
@@ -2306,6 +2375,19 @@ class PersonaBot(discord.Client):
             stable = f"{stable}\n\n---\n\n{self.psychology}"
         if self.vocab:
             stable = f"{stable}\n\n---\n\n{self.vocab}"
+        # Cached half on purpose. It is re-read from disk every reply but only
+        # changes when a fetch lands, so it is byte-identical between them and
+        # costs one extra cache write a day rather than full price on every
+        # message. Openers inherit it here too, which is the whole of "he can
+        # open with one" - no second injection point.
+        if WORLD_ENABLED:
+            try:
+                news = world.load(WORLD_MAX_CHARS, WORLD_STALE_HOURS)
+            except Exception:
+                log.exception("World digest failed to load; carrying on without it")
+                news = ""
+            if news:
+                stable = f"{stable}\n\n---\n\n{WORLD_HEADER}\n\n{news}"
         volatile = f"\n\n---\n\n{framing}\n\n---\n\n{CONFIDENTIALITY}"
         if BRAIN_ENABLED:
             try:

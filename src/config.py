@@ -177,6 +177,40 @@ CONTEXT_MAX_CHARS = int(os.getenv("CONTEXT_MAX_CHARS", "24000"))
 # not this quarter.
 PATCH_NOTES_HOURS = int(os.getenv("PATCH_NOTES_HOURS", "24"))
 
+# What is going on outside this channel. Fetched on a timer, written to one
+# file, read by the live bot. Nothing here is on the reply path: no digest, a
+# stale digest or a failed fetch all mean he does not know what happened today,
+# which is a state real people are in constantly.
+#
+# The heavy categories are excluded when the digest is WRITTEN, not when it is
+# used - see WORLD_PROMPT. The cheapest control over what this persona says
+# about a disaster is for the disaster never to be in the file.
+WORLD_ENABLED = os.getenv("WORLD_ENABLED", "true").lower() == "true"
+# Times a day it goes and looks, drawn fresh each morning inside the window
+# below, the same way pokes are - a fetch on the hour every day is a countable
+# tell in the one part of this bot that is meant to look like reading the news
+# over breakfast.
+WORLD_MIN_PER_DAY = int(os.getenv("WORLD_MIN_PER_DAY", "2"))
+WORLD_MAX_PER_DAY = int(os.getenv("WORLD_MAX_PER_DAY", "3"))
+WORLD_WINDOW_START = int(os.getenv("WORLD_WINDOW_START", "7"))   # local hour
+WORLD_WINDOW_END = int(os.getenv("WORLD_WINDOW_END", "22"))
+WORLD_MIN_GAP_MINUTES = int(os.getenv("WORLD_MIN_GAP_MINUTES", "180"))
+# Past this, the digest is treated as absent. Yesterday's news presented as
+# today's is the one failure here a reader can actually catch, because they
+# were there for it.
+WORLD_STALE_HOURS = float(os.getenv("WORLD_STALE_HOURS", "36"))
+WORLD_MAX_CHARS = int(os.getenv("WORLD_MAX_CHARS", "2000"))
+# WORLD_PROMPT asks for five categories - general, games, tech, sport, internet
+# - so a budget of five meant running out mid-sweep. The model then explained
+# itself instead of answering, twice, which is_digest now catches. Fetching two
+# or three times a day makes this cheap enough to be generous with.
+WORLD_SEARCH_MAX = int(os.getenv("WORLD_SEARCH_MAX", "8"))
+# Search results arrive as content blocks and count against this, so a wide
+# sweep can spend the entire allowance before the model writes a line. At 1500
+# it produced nothing at all and logged it as "came back empty", which pointed
+# the diagnosis at the wrong thing.
+WORLD_MAX_TOKENS = int(os.getenv("WORLD_MAX_TOKENS", "8000"))
+
 # ASCII art. Always available on request; unprompted it is a commitment bit -
 # answering a two-word question with a full diagram, where the effort being
 # wildly out of proportion is the entire joke. Rationed hard, because the
