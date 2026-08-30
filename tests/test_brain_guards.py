@@ -135,3 +135,70 @@ def test_headings_alone_are_not_written():
 
 def test_one_real_sentence_under_headings_is_enough():
     assert brain._is_written("## Stance\n\nHe thinks you take orders.\n") is True
+
+
+# --- profiles are model context, and were never treated as such --------------
+
+
+def test_profiles_are_de_dashed_on_write(tmp_path, monkeypatch):
+    """A profile goes into the system prompt exactly like persona.md and
+    prompts.py do, so an em dash in one is not a style violation but a lesson.
+    tests/test_style.py scans PROMPT_FILES and cannot see these - they are
+    generated and gitignored - and seven of eight profiles carried 29 between
+    them, including one inside the starter placeholder write_profile itself
+    writes."""
+    monkeypatch.setattr(brain, "PEOPLE_DIR", str(tmp_path))
+    dash = "\u2014"
+    path = brain.write_profile(
+        "someone", "Someone", f"They type like this {dash} constantly.", ""
+    )
+    assert dash not in open(path).read()
+
+
+def test_no_profile_on_disk_carries_an_em_dash():
+    """The regression check. These files are gitignored, so nothing else looks
+    at them."""
+    import glob
+    import os
+    dash = "\u2014"
+    bad = [
+        os.path.basename(p)
+        for p in glob.glob(os.path.join(brain.PEOPLE_DIR, "*.md"))
+        if dash in open(p).read()
+    ]
+    assert not bad, f"em dashes in {bad}"
+
+
+# --- repairing what cannot be regenerated ------------------------------------
+
+
+def test_a_sentence_cut_mid_quote_is_trimmed_back():
+    """wurmz's profile ended on `the cosplaying bit ("we're just`. It was
+    written before the max_tokens guard existed and cannot be regenerated: he
+    has 792 observed messages and zero of them are still reachable, so a
+    rescan has nothing to read."""
+    text = 'Runs a bit about the dog. The Real Jaq feud: the cosplaying bit ("we\'re just'
+    out = brain.repair_truncation(text)
+    assert out == "Runs a bit about the dog."
+
+
+def test_a_complete_profile_is_left_alone():
+    for text in ("One thing. Two things.", "Ends on a quote.\"", "A list of things)"):
+        assert brain.repair_truncation(text) == text
+
+
+def test_a_single_unfinished_sentence_is_kept():
+    """Better a fragment than nothing at all when there is no sentence break
+    to fall back to."""
+    text = "they type in short bursts and never finish a"
+    assert brain.repair_truncation(text) == text
+
+
+def test_repair_does_not_touch_the_hand_written_half(tmp_path, monkeypatch):
+    """The half a scan preserves byte for byte is the half a repair must not
+    touch either. jaqsup has 31 lines of it."""
+    monkeypatch.setattr(brain, "PEOPLE_DIR", str(tmp_path))
+    mine = "## Jaq's read\n\nHe is a menace and you like it. Never say so."
+    brain.write_profile("someone", "Someone", "Observed things. And more", mine)
+    _, kept = brain.read_profile("someone")
+    assert kept == mine

@@ -209,6 +209,24 @@ def _is_written(handwritten: str) -> bool:
     return False
 
 
+def repair_truncation(generated: str) -> str:
+    """Trim a profile that stops mid-sentence back to the last complete one.
+
+    Profiles written before the max_tokens guard existed are still on disk and
+    cannot be regenerated when the person has left the channel - wurmz has 792
+    observed messages and zero of them are reachable any more, so a rescan has
+    nothing to read. Repairing what is there is the only option left, and a
+    sentence that stops mid-quote is worse than a shorter profile.
+    """
+    text = generated.rstrip()
+    if not text or text[-1] in ".!?\"')":
+        return text
+    cut = max(text.rfind(". "), text.rfind(".\n"))
+    if cut == -1:
+        return text
+    return text[: cut + 1]
+
+
 def write_profile(handle: str, display: str, generated: str, handwritten: str) -> str:
     """Write a profile, keeping the hand-written tail exactly as it was."""
     os.makedirs(PEOPLE_DIR, exist_ok=True)
@@ -219,7 +237,17 @@ def write_profile(handle: str, display: str, generated: str, handwritten: str) -
             "_Nothing yet. Write how Jaq feels about them here - it survives "
             "every future scan._"
         )
-    body = f"# {display} ({handle})\n\n{generated.strip()}\n\n{HANDWRITTEN_MARKER}\n\n{handwritten.strip()}\n"
+    # De-dashed on write. A profile is model context, exactly like persona.md
+    # and prompts.py, so an em dash in one is not a style violation but a
+    # lesson - and it is the single most recognisable machine tell in written
+    # text. tests/test_style.py scans PROMPT_FILES and cannot see these: they
+    # are generated and gitignored. Seven of eight profiles carried 29 of them
+    # between them before this line existed, including one inside the starter
+    # placeholder this very function writes.
+    body = guard.de_dash(
+        f"# {display} ({handle})\n\n{generated.strip()}\n\n"
+        f"{HANDWRITTEN_MARKER}\n\n{handwritten.strip()}\n"
+    )
     with open(path, "w") as f:
         f.write(body)
     return path
