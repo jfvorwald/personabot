@@ -189,3 +189,46 @@ def test_psychology_is_a_separate_block_from_persona(bot_module):
     text = bot_module.load_psychology()
     assert "persona.md" in text, "should point at the persona rather than restate it"
     assert "influence" in text.lower(), "should record why the persuasion half is out"
+
+
+# --- declining to speak ------------------------------------------------------
+
+
+@pytest.mark.parametrize("reply", [
+    "<pass>", "pass", "PASS", "  pass.  ", "*pass*", "[pass]", "(pass)",
+    "<pass> nothing worth saying here",
+])
+def test_every_way_it_declines_is_understood(reply, bot_module):
+    """The prompt asks for the exact token and the model does not always give
+    it. On 2026-08-28 it answered with the bare word "pass", which failed a
+    startswith(PASS_TOKEN) check and was posted into the channel as a message
+    reading "pass"."""
+    assert bot_module._is_pass(reply) is True
+
+
+@pytest.mark.parametrize("reply", [
+    "passing on that one",
+    "i will pass the salt",
+    "no",
+    "that's a hard pass from ben",
+    "",
+])
+def test_a_sentence_about_passing_is_not_a_pass(bot_module, reply):
+    """Only at the very start. A reply that opens by declining is a decline; a
+    reply that merely contains the word is a sentence."""
+    assert bot_module._is_pass(reply) is False
+
+
+def test_the_silence_is_observed_on_both_paths(bot_module):
+    """The reply log had 234 replies and 0 passes, so 81% of replies being
+    jokes could not be told apart from a bot that replies less and jokes on
+    what is left. A numerator with no denominator answers nothing."""
+    import inspect
+    src = inspect.getsource(bot_module)
+    # Both call sites go through the same helper and both record it.
+    assert src.count('self._observe("pass"') == 2
+    # The specific anti-pattern, not any mention: _is_pass uses the token
+    # itself, and its docstring names the check it replaced.
+    assert "reply.strip().startswith(PASS_TOKEN)" not in src, (
+        "a raw startswith check is back at a call site; it misses the bare word"
+    )

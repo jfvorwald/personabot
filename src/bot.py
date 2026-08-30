@@ -120,6 +120,24 @@ def _with_images(text: str, images: list | None) -> str | list:
     return [*images, {"type": "text", "text": text}]
 
 
+def _is_pass(reply: str) -> bool:
+    """Did the model decline to speak?
+
+    The prompt asks for the exact token `<pass>` and the model does not always
+    give it. On 2026-08-28 it answered with the bare word "pass", which failed
+    a startswith(PASS_TOKEN) check and was posted to the channel as a message
+    reading "pass". _pick_reaction had already learned this and tolerates a
+    bare PASS at its own call site; this is the same lesson applied where it
+    actually reaches Discord.
+
+    Tolerant on purpose, and only at the very start: a reply that opens by
+    declining is a decline, and one that merely contains the word somewhere is
+    a sentence about passing.
+    """
+    head = reply.strip().lower().lstrip("*_`").rstrip("*_`.! ")
+    return head.startswith(PASS_TOKEN) or head in ("pass", "<pass>", "(pass)", "[pass]")
+
+
 def _system_blocks(stable: str, volatile: str) -> list[dict] | str:
     """The system prompt, split so the stable half can be cached.
 
@@ -1976,7 +1994,7 @@ class PersonaBot(discord.Client):
             log.info("Reply was a caption; posting the picture without it")
             reply = ""
 
-        if reply.strip().startswith(PASS_TOKEN):
+        if _is_pass(reply):
             log.info("Chose to stay silent")
             self._observe("pass", to=message.author.display_name)
             self._react_later(message)
@@ -2219,8 +2237,12 @@ class PersonaBot(discord.Client):
         if not reply:
             log.warning("Model returned no text; nothing posted")
             return False
-        if may_stay_silent and reply.strip().startswith(PASS_TOKEN):
+        if may_stay_silent and _is_pass(reply):
             log.info("Chose to stay silent")
+            # Was not observed at all, so the reply log had a numerator and no
+            # denominator: 234 replies, 0 passes, and no way to tell whether a
+            # quieter bot was replying less or just replying differently.
+            self._observe("pass", to="channel")
             return False
         await channel.send(reply[:MAX_DISCORD_CHARS])
         log.info("Posted %d chars to #%s", len(reply), channel.name)
