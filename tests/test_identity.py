@@ -155,11 +155,43 @@ def test_creator_profile_disambiguates_the_shared_name():
     assert "that is him, not you" in body
 
 
-def test_creator_profile_defers_without_fawning():
-    body = open("brain/people/jaqsup.md").read()
-    assert "His word is final" in body
-    assert "Never fawn" in body
-    assert "Keep roasting him" in body
+def test_creator_deference_rules_are_loaded_somewhere():
+    """The rules matter; which file holds them does not.
+
+    They lived in the hand-written half of brain/people/jaqsup.md and moved to
+    personnel/general/ on 2026-08-30, because personnel is where hand-written
+    stance belongs and because general/ loads unconditionally. That last part
+    is the load-bearing bit: people/<slug>/ only loads when that person is in
+    the room, and "never join a pile-on" matters most when he is not.
+
+    So this looks in both places and fails only if neither has them. Both are
+    outside the repo - the brain is gitignored and personnel is a separate
+    private checkout - so it skips where neither is present.
+    """
+    import os
+
+    from dotenv import dotenv_values
+
+    root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    haystack = ""
+
+    profile = os.path.join(root, "brain", "people", "jaqsup.md")
+    if os.path.exists(profile):
+        haystack += open(profile).read()
+
+    checkout = (dotenv_values(os.path.join(root, ".env")).get("JAQ_PERSONNEL_PATH") or "").strip()
+    general = os.path.join(checkout, "general") if checkout else ""
+    if general and os.path.isdir(general):
+        for name in sorted(os.listdir(general)):
+            if name.endswith(".md"):
+                haystack += open(os.path.join(general, name)).read()
+
+    if not haystack:
+        pytest.skip("neither the brain nor a personnel checkout is present here")
+
+    for rule in ("His word is final", "Never fawn", "Keep roasting him",
+                 "Never join a pile-on"):
+        assert rule in haystack, f"the creator rule {rule!r} is not loaded anywhere"
 
 
 def test_creator_profile_holds_no_identifying_details():
